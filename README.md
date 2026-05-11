@@ -2,12 +2,15 @@
 
 ## Publicar o PWA no GitHub Pages (sem depender do seu PC)
 
-O workflow aceita a branch **`Principal`** (GitHub em portugues) ou **`main`** / **`master`**, e a pasta do front **`app`** ou **`Aplicativo`**.
+O workflow **Deploy PWA (branch gh-pages)** copia `app/` ou `Aplicativo/` e publica na branch **`gh-pages`** (evita o erro *Get Pages site failed* da API *GitHub Actions* em algumas organizacoes).
 
-1. Crie um repositorio no GitHub e envie este projeto (`git push`).
-2. No repositorio: **Settings** → **Pages** → **Build and deployment** → **Source**: **GitHub Actions**.
-3. Faca um push na branch `main` ou `master` (ou abra **Actions** → **Deploy PWA to GitHub Pages** → **Run workflow**).
-4. Quando terminar, o site estara em:
+1. Envie o codigo (`git push`).
+2. Espere **Actions** ficar **verde** (cria/atualiza a branch `gh-pages`).
+3. No GitHub: **Settings** → **Pages** → **Build and deployment** / **Implantacao**:
+   - Origem: **Implantar de um branch** / **Deploy from a branch** (NAO "GitHub Actions" para este fluxo).
+   - Branch: **`gh-pages`**
+   - Pasta: **`/`** (root)
+4. Salve. O site ficara em:
    - `https://SEU_USUARIO.github.io/NOME_DO_REPO/`
 5. **API em producao:** a pagina do GitHub e **HTTPS**. O navegador **bloqueia** chamar API **HTTP** de outro servidor. O backend precisa estar em **HTTPS** (ou mesmo dominio com proxy).
 6. Edite `app/config.js`, preencha `PROD_API` com a URL, por exemplo:

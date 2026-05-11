@@ -1,7 +1,13 @@
-# Publica o PWA no GitHub Pages (HTTPS).
-# Pasta do front: "app" OU "Aplicativo" (GitHub em portugues as vezes renomeia).
-# Branch: main, master ou Principal (padrao em alguns repos PT-BR).
-name: Deploy PWA to GitHub Pages
+# Publica o PWA na branch gh-pages (metodo classico).
+# NAO usa configure-pages/deploy-pages da API do GitHub — evita HttpError Not Found
+# em organizacoes onde o token nao habilita Pages via Actions.
+#
+# Apos o primeiro deploy verde: Repo > Settings > Pages >
+#   Origem: "Implantar de um branch" / Deploy from a branch
+#   Branch: gh-pages   Pasta: / (root)
+#
+# Pasta do front no repo: "app" OU "Aplicativo"
+name: Deploy PWA (branch gh-pages)
 
 on:
   push:
@@ -16,28 +22,18 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: pages
+  group: pages-gh-pages
   cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v4
-        with:
-          enablement: true
 
       - name: Preparar pasta do site (app ou Aplicativo)
         run: |
@@ -54,11 +50,10 @@ jobs:
             exit 1
           fi
 
-      - name: Upload site artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Publicar em gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: _site
-
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: _site
+          force_orphan: true
