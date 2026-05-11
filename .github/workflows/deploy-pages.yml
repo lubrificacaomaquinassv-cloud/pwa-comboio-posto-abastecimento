@@ -33,6 +33,9 @@ jobs:
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v4
+        with:
+          # Primeira execucao: tenta habilitar Pages + build via Actions (evita HttpError Not Found)
+          enablement: true
 
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3
