@@ -28,7 +28,7 @@
     return;
   }
 
-  // Producao (ex.: GitHub Pages): coloque a URL HTTPS da API publicada.
-  var PROD_API = "";
+  // Troque a linha abaixo pela URL HTTPS real da sua API (ex.: https://meu-servidor.com/api)
+  var PROD_API = "https://COLE-AQUI-SUA-URL-HTTPS-SEM-BARRA-NO-FINAL";
   window.APP_API_BASE_URL = String(PROD_API).replace(/\/$/, "");
 })();
