@@ -1,5 +1,6 @@
-# Publica a pasta app/ no GitHub Pages (HTTPS).
-# Apos o primeiro push: Repo > Settings > Pages > Build: GitHub Actions.
+# Publica o PWA no GitHub Pages (HTTPS).
+# Pasta do front: "app" OU "Aplicativo" (GitHub em portugues as vezes renomeia).
+# Branch: main, master ou Principal (padrao em alguns repos PT-BR).
 name: Deploy PWA to GitHub Pages
 
 on:
@@ -7,8 +8,10 @@ on:
     branches:
       - main
       - master
+      - Principal
     paths:
       - "app/**"
+      - "Aplicativo/**"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -34,13 +37,27 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v4
         with:
-          # Primeira execucao: tenta habilitar Pages + build via Actions (evita HttpError Not Found)
           enablement: true
+
+      - name: Preparar pasta do site (app ou Aplicativo)
+        run: |
+          rm -rf _site
+          if [ -d app ]; then
+            cp -a app _site
+            echo "Usando pasta: app"
+          elif [ -d Aplicativo ]; then
+            cp -a Aplicativo _site
+            echo "Usando pasta: Aplicativo"
+          else
+            echo "ERRO: nem app/ nem Aplicativo/ encontrados."
+            ls -la
+            exit 1
+          fi
 
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: app
+          path: _site
 
       - name: Deploy
         id: deployment

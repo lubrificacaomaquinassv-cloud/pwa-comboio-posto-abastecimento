@@ -2,6 +2,8 @@
 
 ## Publicar o PWA no GitHub Pages (sem depender do seu PC)
 
+O workflow aceita a branch **`Principal`** (GitHub em portugues) ou **`main`** / **`master`**, e a pasta do front **`app`** ou **`Aplicativo`**.
+
 1. Crie um repositorio no GitHub e envie este projeto (`git push`).
 2. No repositorio: **Settings** → **Pages** → **Build and deployment** → **Source**: **GitHub Actions**.
 3. Faca um push na branch `main` ou `master` (ou abra **Actions** → **Deploy PWA to GitHub Pages** → **Run workflow**).
