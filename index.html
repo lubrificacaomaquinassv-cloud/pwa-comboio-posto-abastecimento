@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b1b2b" />
+    <meta name="description" content="PWA para controle de abastecimento de comboio." />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="stylesheet" href="./styles.css" />
+    <title>CONTROLE DE ABASTECIMENTO DE FROTA</title>
+  </head>
+  <body>
+    <main class="container">
+      <section id="gate-screen" class="card gate-screen" aria-labelledby="gate-heading">
+        <div class="brand">
+          <img src="./assets/logo_sv.png" alt="Logo da empresa" class="brand-logo" />
+          <h1 id="gate-heading">CONTROLE DE ABASTECIMENTO DE FROTA</h1>
+        </div>
+        <p class="subtitle">Controle de abastecimentos com suporte offline</p>
+        <h2 class="gate-prompt">Primeiro escolha: posto de abastecimento ou comboio</h2>
+        <p class="subtitle gate-hint">
+          So depois desta escolha o formulario da area aparece. Cada fluxo e uma tela separada. Voce pode
+          trocar depois com &quot;Trocar area&quot; sem perder o que ja foi salvo no aparelho.
+        </p>
+        <div class="gate-choices" role="group" aria-label="Posto de abastecimento ou comboio">
+          <button type="button" id="gate-posto" class="gate-choice-btn">
+            <span class="gate-choice-title">Posto de abastecimento</span>
+            <span class="gate-choice-desc">Abastecimento no posto fixo (frota, combustivel, frente de trabalho).</span>
+          </button>
+          <button type="button" id="gate-comboio" class="gate-choice-btn gate-choice-btn-alt">
+            <span class="gate-choice-title">Comboio</span>
+            <span class="gate-choice-desc">Abastecimento movel, ordem COM- e lubrificacao no campo.</span>
+          </button>
+        </div>
+      </section>
+
+      <div id="app-screen" class="hidden">
+        <header class="header">
+          <div class="brand brand-app">
+            <img src="./assets/logo_sv.png" alt="Logo da empresa" class="brand-logo" />
+            <div class="brand-text-stack">
+              <p class="app-brand-kicker">Controle de abastecimento de frota · offline</p>
+              <h1 id="app-workflow-heading" class="app-workflow-heading" aria-live="polite"></h1>
+              <p id="app-workflow-sub" class="subtitle app-workflow-subline"></p>
+            </div>
+          </div>
+          <p id="connection-status" class="connection-status" aria-live="polite"></p>
+          <p id="db-sync-status" class="connection-status" aria-live="polite"></p>
+        </header>
+
+        <section class="card area-banner" aria-label="Area ativa">
+          <div class="area-banner-text">
+            <span class="area-banner-kicker">Tela ativa</span>
+            <p id="area-label" class="area-label" aria-live="polite"></p>
+          </div>
+          <button type="button" id="change-area" class="btn-secondary">Trocar area</button>
+        </section>
+
+        <div
+          id="workspace-posto"
+          class="workspace workspace-posto hidden"
+          role="region"
+          aria-labelledby="posto-heading"
+        >
+        <section id="posto-section" class="card">
+          <h2 id="posto-heading">Posto de abastecimento</h2>
+          <form id="fuel-form" class="form-stack">
+            <div class="form-section">
+              <p class="form-section-kicker">Quando e volume</p>
+              <div class="form-grid">
+                <label>
+                  Data e hora
+                  <input id="fuelDateTime" name="fuelDateTime" type="datetime-local" required />
+                </label>
+                <label>
+                  Litros
+                  <input id="liters" name="liters" type="number" step="0.1" min="0.1" required />
+                </label>
+              </div>
+            </div>
+            <div class="form-section">
+              <p class="form-section-kicker">Frota e combustivel</p>
+              <div class="form-grid">
+                <label>
+                  Frota/Equipamento
+                  <input id="vehicle" name="vehicle" required placeholder="Ex.: PATROLA-07" />
+                </label>
+                <label>
+                  Combustivel
+                  <select id="fuelType" name="fuelType" required>
+                    <option value="">Selecione</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="form-section">
+              <p class="form-section-kicker">Operacao no campo</p>
+              <div class="form-grid">
+                <label>
+                  Horimetro/Odometro
+                  <input
+                    id="hourmeterOdometer"
+                    name="hourmeterOdometer"
+                    placeholder="Ex.: 3210 h ou 124500 km"
+                    required
+                  />
+                </label>
+                <label>
+                  Frente de trabalho
+                  <input
+                    id="workFront"
+                    name="workFront"
+                    placeholder="Ex.: Frente 02 - talhao leste"
+                    required
+                  />
+                </label>
+                <label class="field-span-full">
+                  Tipo de trabalho em execucao
+                  <input id="workType" name="workType" placeholder="Ex.: transporte de cana" required />
+                </label>
+              </div>
+            </div>
+            <button type="submit">Salvar</button>
+          </form>
+        </section>
+
+        <section id="recent-posto-section" class="card">
+          <h2>Ultimos 5 abastecimentos (posto)</h2>
+          <div class="recent-table" role="table" aria-label="Ultimos abastecimentos no posto">
+            <div class="recent-row recent-head" role="row">
+              <span role="columnheader">Placa/Frota</span>
+              <span role="columnheader">Combustivel</span>
+              <span role="columnheader">Quantidade</span>
+            </div>
+            <ul id="recent-posto-list" class="recent-body"></ul>
+          </div>
+        </section>
+        </div>
+
+        <div
+          id="workspace-comboio"
+          class="workspace workspace-comboio hidden"
+          role="region"
+          aria-labelledby="comboio-heading"
+        >
+        <section id="comboio-section" class="card">
+          <h2 id="comboio-heading">Comboio — recebimento no campo</h2>
+        <p class="subtitle">
+          Numero de ordem e gerado ao salvar (ex.: COM-00001). Para outra atividade (ex.: completar
+          cardan), abra um novo lancamento — uma ordem por servico.
+        </p>
+        <p id="next-order-preview" class="connection-status online" aria-live="polite"></p>
+        <form id="receipt-form" class="form-stack">
+          <div class="form-section">
+            <p class="form-section-kicker">Quando e frota</p>
+            <div class="form-grid">
+              <label>
+                Data e hora
+                <input id="receiptDateTime" name="receiptDateTime" type="datetime-local" required />
+              </label>
+              <label>
+                Placa/Frota/Equipamento
+                <input
+                  id="receiptVehicle"
+                  name="receiptVehicle"
+                  required
+                  placeholder="Ex.: PATROLA-07 ou ABC1D23"
+                />
+              </label>
+            </div>
+          </div>
+          <div class="form-section">
+            <p class="form-section-kicker">Combustivel recebido</p>
+            <div class="form-grid">
+              <label>
+                Combustivel recebido
+                <select id="receiptFuelType" name="receiptFuelType" required>
+                  <option value="">Selecione</option>
+                </select>
+              </label>
+              <label>
+                Litros recebidos
+                <input
+                  id="receiptLiters"
+                  name="receiptLiters"
+                  type="number"
+                  step="0.1"
+                  min="0.1"
+                  required
+                />
+              </label>
+            </div>
+          </div>
+          <div class="form-section">
+            <p class="form-section-kicker">Local e servico</p>
+            <div class="form-grid">
+              <label>
+                Local (Retiro)
+                <input id="receiptLocation" name="receiptLocation" placeholder="Ex.: Retiro Norte" required />
+              </label>
+              <label>
+                Tipo de trabalho executado
+                <input
+                  id="receiptWorkType"
+                  name="receiptWorkType"
+                  placeholder="Ex.: terraplenagem"
+                  required
+                />
+              </label>
+            </div>
+          </div>
+          <div class="form-section">
+            <fieldset class="group-fieldset group-fieldset-flush">
+              <legend>Lubrificacao (troca de oleo e/ou filtro)</legend>
+              <label class="checkbox-line">
+                <input type="checkbox" name="lubeActions" value="preventiva" />
+                Preventiva
+              </label>
+              <label class="checkbox-line">
+                <input type="checkbox" name="lubeActions" value="corretiva" />
+                Corretiva
+              </label>
+              <label class="checkbox-line">
+                <input type="checkbox" name="lubeActions" value="completar_nivel" />
+                Completar nivel
+              </label>
+            </fieldset>
+          </div>
+          <div class="form-section">
+            <p class="form-section-kicker">Oleo e filtro (opcional)</p>
+            <div class="form-grid">
+              <label>
+                Tipo de oleo — linha 1
+                <input id="lubeOilType1" name="lubeOilType1" placeholder="Ex.: 15W40 API CI-4" />
+              </label>
+              <label>
+                Tipo de oleo — linha 2
+                <input id="lubeOilType2" name="lubeOilType2" placeholder="Opcional — segundo produto" />
+              </label>
+              <label>
+                Tipo de filtro — linha 1
+                <input id="lubeFilterType1" name="lubeFilterType1" placeholder="Ex.: Filtro de oleo X123" />
+              </label>
+              <label>
+                Tipo de filtro — linha 2
+                <input id="lubeFilterType2" name="lubeFilterType2" placeholder="Opcional — segundo filtro" />
+              </label>
+            </div>
+          </div>
+          <label id="lube-observation-wrap" class="lube-observation-block hidden">
+            Observacao (obrigatoria para corretiva/completar nivel)
+            <textarea
+              id="lubeObservation"
+              name="lubeObservation"
+              rows="3"
+              placeholder="Descreva o motivo"
+            ></textarea>
+          </label>
+          <button type="submit">Registrar recebimento no comboio</button>
+        </form>
+      </section>
+
+        <section id="recent-comboio-section" class="card">
+          <h2>Ultimos 5 servicos (comboio)</h2>
+          <div class="recent-table" role="table" aria-label="Ultimos servicos no comboio">
+            <div class="recent-row recent-head" role="row">
+              <span role="columnheader">Ordem</span>
+              <span role="columnheader">Placa/Frota</span>
+              <span role="columnheader">Combustivel</span>
+              <span role="columnheader">Quantidade</span>
+            </div>
+            <ul id="recent-comboio-list" class="recent-body"></ul>
+          </div>
+        </section>
+        </div>
+
+        <div id="trailing-config" class="trailing-anchor">
+          <section class="card">
+            <h2>Configuracao de combustiveis</h2>
+            <form id="fuel-settings-form" class="inline-form">
+              <input
+                id="new-fuel-option"
+                name="newFuelOption"
+                placeholder="Adicionar novo tipo de combustivel"
+                maxlength="60"
+              />
+              <button type="submit" disabled>Adicionar (bloqueado)</button>
+            </form>
+            <p class="subtitle">Somente leitura. Alteracoes de configuracao ficam com conciliacao administrativa.</p>
+            <ul id="fuel-options-list" class="fuel-options-list"></ul>
+          </section>
+        </div>
+
+        <div id="trailing-informe" class="trailing-anchor">
+          <section class="card informe-card">
+            <h2>Registros e alteracoes</h2>
+            <p class="subtitle informe-text">
+              Os lancamentos feitos neste aplicativo sao definitivos na tela. Qualquer correcao ou exclusao
+              e feita somente pela gestao, via banco de dados (conciliacao). Nao ha lista editavel aqui.
+            </p>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <script src="./config.js?v=15"></script>
+    <script src="./app.js?v=15"></script>
+  </body>
+</html>
