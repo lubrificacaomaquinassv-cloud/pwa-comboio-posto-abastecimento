@@ -217,7 +217,7 @@ async function processPendingSyncEvents() {
     try {
       const response = await fetch(syncPostUrl(), {
         method: "POST",
-        headers: { "Content-Type": "text/plain" },
+      headers: { "Content-Type": "text/plain" },
         body: JSON.stringify(event),
       });
       const text = await response.text();
