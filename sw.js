@@ -1,6 +1,5 @@
-const CACHE_NAME = "comboio-posto-v15";
-/** Bump with index.html script query + app.js SW_URL when config/sync logic changes. */
-const ASSET_VER = "15";
+const CACHE_NAME = "comboio-posto-v16";
+const ASSET_VER = "16";
 const APP_SHELL = [
   "./index.html",
   `./config.js?v=${ASSET_VER}`,
