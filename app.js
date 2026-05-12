@@ -215,15 +215,23 @@ async function processPendingSyncEvents() {
   while (queue.length) {
     const event = queue[0];
     try {
-      // CORRECAO DEFINITIVA: no-cors para Google Apps Script
-      // Com no-cors nao conseguimos ler a resposta, mas o dado chega no Sheets.
-      await fetch(syncPostUrl(), {
+      const response = await fetch(syncPostUrl(), {
         method: "POST",
-        mode: "no-cors",
+        redirect: "follow",
         headers: { "Content-Type": "text/plain" },
         body: JSON.stringify(event),
       });
-      // Assume sucesso e remove da fila
+      const text = await response.text();
+      let data = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        break;
+      }
+      if (!data || data.ok === false) {
+        console.error("Sync recusado:", data && data.error);
+        break;
+      }
       queue = queue.slice(1);
       savePendingSyncEvents(queue);
     } catch {
