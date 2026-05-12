@@ -215,9 +215,11 @@ async function processPendingSyncEvents() {
   while (queue.length) {
     const event = queue[0];
     try {
+      // CORRECAO: text/plain evita preflight CORS no Google Apps Script
       const response = await fetch(syncPostUrl(), {
         method: "POST",
-      headers: { "Content-Type": "text/plain" },
+        headers: { "Content-Type": "text/plain" },
+        redirect: "follow",
         body: JSON.stringify(event),
       });
       const text = await response.text();
