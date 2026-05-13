@@ -9,17 +9,31 @@ const POST_FUEL_OPTIONS = [
   "Diesel S-500 Aditivado",
   "Diesel S-500 Comum",
 ];
-const RECEIPT_FUEL_OPTIONS = ["Diesel S-500 Comum", "Diesel S-500 Aditivado"];
+const RECEIPT_FUEL_OPTIONS = [...POST_FUEL_OPTIONS];
 const API_BASE_URL = (window.APP_API_BASE_URL || "").replace(/\/$/, "");
+
+/** URL POST de sync: Node usa /lancamentos; Google Apps Script usa so o URL /exec. */
+function syncPostUrl() {
+  if (!API_BASE_URL) return "";
+  if (API_BASE_URL.indexOf("script.google.com") !== -1) return API_BASE_URL;
+  return `${API_BASE_URL}/lancamentos`;
+}
 
 const form = document.getElementById("fuel-form");
 const receiptForm = document.getElementById("receipt-form");
-const postoSection = document.getElementById("posto-section");
-const comboioSection = document.getElementById("comboio-section");
-const recentPostoSection = document.getElementById("recent-posto-section");
-const recentComboioSection = document.getElementById("recent-comboio-section");
-const modePostoButton = document.getElementById("mode-posto");
-const modeComboioButton = document.getElementById("mode-comboio");
+const workspacePosto = document.getElementById("workspace-posto");
+const workspaceComboio = document.getElementById("workspace-comboio");
+const trailingConfig = document.getElementById("trailing-config");
+const trailingInforme = document.getElementById("trailing-informe");
+const gateScreen = document.getElementById("gate-screen");
+const appScreen = document.getElementById("app-screen");
+const gatePostoButton = document.getElementById("gate-posto");
+const gateComboioButton = document.getElementById("gate-comboio");
+const changeAreaButton = document.getElementById("change-area");
+const areaLabel = document.getElementById("area-label");
+const appWorkflowHeading = document.getElementById("app-workflow-heading");
+const appWorkflowSub = document.getElementById("app-workflow-sub");
+const DOCUMENT_TITLE_DEFAULT = "CONTROLE DE ABASTECIMENTO DE FROTA";
 const fuelDateTimeInput = document.getElementById("fuelDateTime");
 const receiptDateTimeInput = document.getElementById("receiptDateTime");
 const recentPostoList = document.getElementById("recent-posto-list");
@@ -35,19 +49,46 @@ const fuelOptionsList = document.getElementById("fuel-options-list");
 const lubeObservationWrap = document.getElementById("lube-observation-wrap");
 const lubeObservationInput = document.getElementById("lubeObservation");
 
-function setActiveMode(mode) {
+function attachTrailingBlocks(mode) {
+  if (mode === "posto") {
+    workspacePosto.appendChild(trailingConfig);
+    workspacePosto.appendChild(trailingInforme);
+  } else {
+    workspacePosto.appendChild(trailingConfig);
+    workspaceComboio.appendChild(trailingInforme);
+  }
+}
+
+function showGate() {
+  document.title = DOCUMENT_TITLE_DEFAULT;
+  gateScreen.classList.remove("hidden");
+  appScreen.classList.add("hidden");
+  window.scrollTo(0, 0);
+}
+
+function enterWorkspace(mode) {
+  gateScreen.classList.add("hidden");
+  appScreen.classList.remove("hidden");
   const isPosto = mode === "posto";
-  postoSection.classList.toggle("hidden", !isPosto);
-  comboioSection.classList.toggle("hidden", isPosto);
-  recentPostoSection.classList.toggle("hidden", !isPosto);
-  recentComboioSection.classList.toggle("hidden", isPosto);
-  modePostoButton.classList.toggle("active", isPosto);
-  modeComboioButton.classList.toggle("active", !isPosto);
-  modePostoButton.setAttribute("aria-selected", String(isPosto));
-  modeComboioButton.setAttribute("aria-selected", String(!isPosto));
+  workspacePosto.classList.toggle("hidden", !isPosto);
+  workspaceComboio.classList.toggle("hidden", isPosto);
+  attachTrailingBlocks(mode);
   if (!isPosto) {
     updateOrderPreview();
   }
+  areaLabel.textContent = isPosto
+    ? "Fluxo do posto (escolhido no inicio). Nada do comboio nesta tela."
+    : "Fluxo do comboio (escolhido no inicio). Nada do posto nesta tela.";
+  if (appWorkflowHeading && appWorkflowSub) {
+    appWorkflowHeading.textContent = isPosto ? "Posto de abastecimento" : "Comboio";
+    appWorkflowSub.textContent = isPosto
+      ? "Voce escolheu posto no inicio. Abaixo so entra lancamento do posto fixo."
+      : "Voce escolheu comboio no inicio. Abaixo so entra recebimento e servico no campo.";
+  }
+  document.title = isPosto ? "Posto | Abastecimento frota" : "Comboio | Abastecimento frota";
+  fillFuelSelects();
+  renderFuelOptionsSettings();
+  window.scrollTo(0, 0);
 }
 
 function getNowLocalDateTimeInputValue() {
@@ -174,12 +215,19 @@ async function processPendingSyncEvents() {
   while (queue.length) {
     const event = queue[0];
     try {
-      const response = await fetch(`${API_BASE_URL}/lancamentos`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(event),
-      });
-      if (!response.ok) break;
+      const url = syncPostUrl() + "?payload=" + encodeURIComponent(JSON.stringify(event));
+      const response = await fetch(url);
+      const text = await response.text();
+      let data = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        break;
+      }
+      if (!data || data.ok === false) {
+        console.error("Sync recusado:", data && data.error);
+        break;
+      }
       queue = queue.slice(1);
       savePendingSyncEvents(queue);
     } catch {
@@ -191,12 +239,17 @@ async function processPendingSyncEvents() {
 
 function enqueueSyncEvent(type, payload) {
   const queue = getPendingSyncEvents();
-  queue.push({
+  const ev = {
     id: makeId(),
     type,
     payload,
     createdAt: new Date().toISOString(),
-  });
+  };
+  const shSecret = typeof window !== "undefined" && window.SHEETS_SYNC_SECRET;
+  if (shSecret && String(shSecret).trim()) {
+    ev.secret = String(shSecret).trim();
+  }
+  queue.push(ev);
   savePendingSyncEvents(queue);
   updateDbSyncStatus();
   processPendingSyncEvents();
@@ -240,6 +293,10 @@ function renderFuelOptionsSettings() {
 }
 
 function fillFuelSelects() {
+  if (!fuelTypeSelect || !receiptFuelTypeSelect) {
+    console.warn("fillFuelSelects: select de combustivel nao encontrado no DOM.");
+    return;
+  }
   const selectedFuelType = fuelTypeSelect.value;
   const selectedReceiptFuelType = receiptFuelTypeSelect.value;
 
@@ -424,8 +481,9 @@ fuelSettingsForm.addEventListener("submit", (event) => {
   newFuelOptionInput.value = "";
 });
 
-modePostoButton.addEventListener("click", () => setActiveMode("posto"));
-modeComboioButton.addEventListener("click", () => setActiveMode("comboio"));
+gatePostoButton.addEventListener("click", () => enterWorkspace("posto"));
+gateComboioButton.addEventListener("click", () => enterWorkspace("comboio"));
+changeAreaButton.addEventListener("click", () => showGate());
 receiptForm.querySelectorAll('input[name="lubeActions"]').forEach((checkbox) => {
   checkbox.addEventListener("change", toggleLubeObservationField);
 });
@@ -433,10 +491,15 @@ window.addEventListener("online", updateConnectionStatus);
 window.addEventListener("offline", updateConnectionStatus);
 window.addEventListener("online", processPendingSyncEvents);
 
+const SW_URL = "./sw.js?v=15";
+
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
     try {
-      await navigator.serviceWorker.register("./sw.js");
+      const reg = await navigator.serviceWorker.register(SW_URL, {
+        updateViaCache: "none",
+      });
+      reg.update();
     } catch (error) {
       console.error("Falha ao registrar service worker:", error);
     }
@@ -448,7 +511,6 @@ renderFuelOptionsSettings();
 setDefaultDateTimes();
 toggleLubeObservationField();
 updateOrderPreview();
-setActiveMode("posto");
 updateConnectionStatus();
 updateDbSyncStatus();
 processPendingSyncEvents();
