@@ -215,12 +215,8 @@ async function processPendingSyncEvents() {
   while (queue.length) {
     const event = queue[0];
     try {
-      const response = await fetch(syncPostUrl(), {
-        method: "POST",
-        redirect: "follow",
-        headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify(event),
-      });
+      const url = syncPostUrl() + "?payload=" + encodeURIComponent(JSON.stringify(event));
+      const response = await fetch(url);
       const text = await response.text();
       let data = null;
       try {
