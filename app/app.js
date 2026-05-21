@@ -10,7 +10,14 @@ const POST_FUEL_OPTIONS = [
   "Diesel S-500 Comum",
 ];
 const RECEIPT_FUEL_OPTIONS = [...POST_FUEL_OPTIONS];
-// Sync direto no Supabase (sem backend intermediario)
+const API_BASE_URL = (window.APP_API_BASE_URL || "").replace(/\/$/, "");
+
+/** URL POST de sync: Node usa /lancamentos; Google Apps Script usa so o URL /exec. */
+function syncPostUrl() {
+  if (!API_BASE_URL) return "";
+  if (API_BASE_URL.indexOf("script.google.com") !== -1) return API_BASE_URL;
+  return `${API_BASE_URL}/lancamentos`;
+}
 
 const form = document.getElementById("fuel-form");
 const receiptForm = document.getElementById("receipt-form");
@@ -185,6 +192,11 @@ function savePendingSyncEvents(events) {
 
 function updateDbSyncStatus(customText) {
   const pending = getPendingSyncEvents().length;
+  if (!API_BASE_URL) {
+    dbSyncStatus.textContent = "Banco nao configurado (defina window.APP_API_BASE_URL).";
+    dbSyncStatus.className = "connection-status offline";
+    return;
+  }
   if (pending === 0) {
     dbSyncStatus.textContent = customText || "Sincronizacao com banco em dia.";
     dbSyncStatus.className = "connection-status online";
@@ -194,89 +206,33 @@ function updateDbSyncStatus(customText) {
   dbSyncStatus.className = "connection-status offline";
 }
 
-async function syncToSupabase(event) {
-  const SB_URL  = "https://azhpxhrwhegfysoeqmft.supabase.co";
-  const SB_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6aHB4aHJ3aGVnZnlzb2VxbWZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2NzUxODcsImV4cCI6MjA5NDI1MTE4N30.iQU1T1NLaGIQyqScLS6qNaoo1QWcI8Mh-jjN52TU5to";
-  const headers = {
-    "Content-Type":  "application/json",
-    "apikey":        SB_KEY,
-    "Authorization": "Bearer " + SB_KEY,
-    "Prefer":        "return=minimal"
-  };
-  const p = event.payload;
-
-  try {
-    if (event.type === "abastecimento") {
-      const r = await fetch(SB_URL + "/rest/v1/posto", {
-        method: "POST", headers,
-        body: JSON.stringify({
-          vehicle:    p.vehicle    || null,
-          fuel_type:  p.fuelType   || null,
-          liters:     parseFloat(p.liters) || null,
-          operator:   p.operatorDriver || null,
-          hourmeter:  p.hourmeterOdometer || null,
-          work_front: p.workFront  || null,
-          work_type:  p.workType   || null,
-          created_at: p.createdAt  || new Date().toISOString()
-        })
-      });
-      return r.ok || r.status === 201;
-    }
-
-    if (event.type === "recebimento") {
-      const r = await fetch(SB_URL + "/rest/v1/comboio", {
-        method: "POST", headers,
-        body: JSON.stringify({
-          order_number: p.orderNumber || null,
-          tipo_servico: "abastecimento",
-          vehicle:      p.vehicle     || null,
-          fuel_type:    p.fuelType    || null,
-          liters:       parseFloat(p.liters) || null,
-          operator:     p.operatorDriver || null,
-          hourmeter:    p.hourmeterOdometer || null,
-          location:     p.location    || null,
-          work_type:    p.workType    || null,
-          created_at:   p.createdAt   || new Date().toISOString()
-        })
-      });
-      if (!r.ok && r.status !== 201) return false;
-
-      // lubrificacao
-      const lub = p.lubrication;
-      if (lub && lub.actions && lub.actions.length > 0) {
-        await fetch(SB_URL + "/rest/v1/lubrificacao", {
-          method: "POST", headers,
-          body: JSON.stringify({
-            order_number: p.orderNumber    || null,
-            vehicle:      p.vehicle        || null,
-            location:     p.location       || null,
-            actions:      lub.actions.join(","),
-            oil_line1:    lub.oilLine1     || null,
-            oil_line2:    lub.oilLine2     || null,
-            filter_line1: lub.filterLine1  || null,
-            filter_line2: lub.filterLine2  || null,
-            observation:  lub.observation  || null,
-            created_at:   p.createdAt      || new Date().toISOString()
-          })
-        });
-      }
-      return true;
-    }
-  } catch(e) {
-    console.error("Supabase sync error:", e);
-    return false;
-  }
-  return false;
-}
-
 async function processPendingSyncEvents() {
-  if (!navigator.onLine) { updateDbSyncStatus(); return; }
+  if (!API_BASE_URL || !navigator.onLine) {
+    updateDbSyncStatus();
+    return;
+  }
   let queue = getPendingSyncEvents();
   while (queue.length) {
-    const ok = await syncToSupabase(queue[0]);
-    if (!ok) break;
-    queue = queue.slice(1);
-    savePendingSyncEvents(queue);
+    const event = queue[0];
+    try {
+      const url = syncPostUrl() + "?payload=" + encodeURIComponent(JSON.stringify(event));
+      const response = await fetch(url);
+      const text = await response.text();
+      let data = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        break;
+      }
+      if (!data || data.ok === false) {
+        console.error("Sync recusado:", data && data.error);
+        break;
+      }
+      queue = queue.slice(1);
+      savePendingSyncEvents(queue);
+    } catch {
+      break;
+    }
   }
   updateDbSyncStatus();
 }
@@ -486,11 +442,13 @@ receiptForm.addEventListener("submit", (event) => {
 
   const orderNumber = assignNextOrderNumber();
   const vehicle = String(formData.get("receiptVehicle") || "").trim();
+  const operatorDriverComboio = String(formData.get("receiptOperatorDriver") || "").trim();
 
   const receipt = {
     id: makeId(),
     orderNumber,
     vehicle,
+    operatorDriver: operatorDriverComboio,
     fuelType,
     liters: Number(formData.get("receiptLiters")).toFixed(1),
     location: String(formData.get("receiptLocation") || "").trim(),
