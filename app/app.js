@@ -10,7 +10,14 @@ const POST_FUEL_OPTIONS = [
   "Diesel S-500 Comum",
 ];
 const RECEIPT_FUEL_OPTIONS = [...POST_FUEL_OPTIONS];
-// Sync direto no Supabase — ver config.js
+const API_BASE_URL = (window.APP_API_BASE_URL || "").replace(/\/$/, "");
+
+/** URL POST de sync: Node usa /lancamentos; Google Apps Script usa so o URL /exec. */
+function syncPostUrl() {
+  if (!API_BASE_URL) return "";
+  if (API_BASE_URL.indexOf("script.google.com") !== -1) return API_BASE_URL;
+  return `${API_BASE_URL}/lancamentos`;
+}
 
 const form = document.getElementById("fuel-form");
 const receiptForm = document.getElementById("receipt-form");
@@ -185,6 +192,11 @@ function savePendingSyncEvents(events) {
 
 function updateDbSyncStatus(customText) {
   const pending = getPendingSyncEvents().length;
+  if (!API_BASE_URL) {
+    dbSyncStatus.textContent = "Banco nao configurado (defina window.APP_API_BASE_URL).";
+    dbSyncStatus.className = "connection-status offline";
+    return;
+  }
   if (pending === 0) {
     dbSyncStatus.textContent = customText || "Sincronizacao com banco em dia.";
     dbSyncStatus.className = "connection-status online";
@@ -194,86 +206,33 @@ function updateDbSyncStatus(customText) {
   dbSyncStatus.className = "connection-status offline";
 }
 
-async function syncEventToSupabase(event) {
-  const SB_URL  = window.SUPABASE_URL;
-  const SB_ANON = window.SUPABASE_ANON;
-  if (!SB_URL || !SB_ANON) return false;
-
-  const headers = {
-    "Content-Type":  "application/json",
-    "apikey":        SB_ANON,
-    "Authorization": "Bearer " + SB_ANON,
-    "Prefer":        "return=minimal"
-  };
-
-  try {
-    if (event.type === "abastecimento") {
-      const p = event.payload;
-      const body = {
-        vehicle:     p.vehicle     || null,
-        fuel_type:   p.fuelType    || null,
-        liters:      parseFloat(p.liters) || null,
-        operator:    p.operatorDriver || null,
-        hourmeter:   p.hourmeterOdometer || null,
-        work_front:  p.workFront   || null,
-        work_type:   p.workType    || null,
-        created_at:  p.createdAt   || new Date().toISOString()
-      };
-      const r = await fetch(SB_URL + "/rest/v1/posto", { method: "POST", headers, body: JSON.stringify(body) });
-      return r.ok || r.status === 201;
-    }
-
-    if (event.type === "recebimento") {
-      const p = event.payload;
-      const body = {
-        order_number: p.orderNumber  || null,
-        tipo_servico: p.tipoServico  || "abastecimento",
-        vehicle:      p.vehicle      || null,
-        fuel_type:    p.fuelType     || null,
-        liters:       p.liters ? parseFloat(p.liters) : null,
-        operator:     p.operatorDriver || null,
-        hourmeter:    p.hourmeterOdometer || null,
-        location:     p.location     || null,
-        work_type:    p.workType     || null,
-        created_at:   p.createdAt    || new Date().toISOString()
-      };
-      const r = await fetch(SB_URL + "/rest/v1/comboio", { method: "POST", headers, body: JSON.stringify(body) });
-      if (!r.ok && r.status !== 201) return false;
-
-      // lubrificacao
-      const lub = p.lubrication;
-      if (lub && (lub.actions && lub.actions.length > 0)) {
-        const lubBody = {
-          order_number:  p.orderNumber || null,
-          vehicle:       p.vehicle     || null,
-          location:      p.location    || null,
-          actions:       (lub.actions || []).join(","),
-          oil_line1:     lub.oilLine1  || null,
-          oil_line2:     lub.oilLine2  || null,
-          filter_line1:  lub.filterLine1 || null,
-          filter_line2:  lub.filterLine2 || null,
-          observation:   lub.observation || null,
-          created_at:    p.createdAt   || new Date().toISOString()
-        };
-        await fetch(SB_URL + "/rest/v1/lubrificacao", { method: "POST", headers, body: JSON.stringify(lubBody) });
-      }
-      return true;
-    }
-  } catch(e) {
-    console.error("Sync error:", e);
-    return false;
-  }
-  return false;
-}
-
 async function processPendingSyncEvents() {
-  if (!navigator.onLine) { updateDbSyncStatus(); return; }
+  if (!API_BASE_URL || !navigator.onLine) {
+    updateDbSyncStatus();
+    return;
+  }
   let queue = getPendingSyncEvents();
   while (queue.length) {
-    const ok = await syncEventToSupabase(queue[0]);
-    if (!ok) break;
-    queue = queue.slice(1);
-    savePendingSyncEvents(queue);
+    const event = queue[0];
+    try {
+      const url = syncPostUrl() + "?payload=" + encodeURIComponent(JSON.stringify(event));
+      const response = await fetch(url);
+      const text = await response.text();
+      let data = null;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        break;
+      }
+      if (!data || data.ok === false) {
+        console.error("Sync recusado:", data && data.error);
+        break;
+      }
+      queue = queue.slice(1);
+      savePendingSyncEvents(queue);
+    } catch {
+      break;
+    }
   }
   updateDbSyncStatus();
 }
@@ -286,6 +245,10 @@ function enqueueSyncEvent(type, payload) {
     payload,
     createdAt: new Date().toISOString(),
   };
+  const shSecret = typeof window !== "undefined" && window.SHEETS_SYNC_SECRET;
+  if (shSecret && String(shSecret).trim()) {
+    ev.secret = String(shSecret).trim();
+  }
   queue.push(ev);
   savePendingSyncEvents(queue);
   updateDbSyncStatus();
@@ -442,7 +405,6 @@ form.addEventListener("submit", (event) => {
     vehicle: formData.get("vehicle"),
     fuelType,
     liters: Number(formData.get("liters")).toFixed(1),
-    operatorDriver: String(formData.get("operatorDriver") || "").trim(),
     hourmeterOdometer: String(formData.get("hourmeterOdometer") || "").trim(),
     workFront: String(formData.get("workFront") || "").trim(),
     workType: String(formData.get("workType") || "").trim(),
@@ -529,7 +491,7 @@ window.addEventListener("online", updateConnectionStatus);
 window.addEventListener("offline", updateConnectionStatus);
 window.addEventListener("online", processPendingSyncEvents);
 
-const SW_URL = "./sw.js?v=16";
+const SW_URL = "./sw.js?v=15";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
