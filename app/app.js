@@ -494,7 +494,7 @@ window.addEventListener("online", updateConnectionStatus);
 window.addEventListener("offline", updateConnectionStatus);
 window.addEventListener("online", processPendingSyncEvents);
 
-const SW_URL = "./sw.js?v=16";
+const SW_URL = "./sw.js?v=19";
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", async () => {
