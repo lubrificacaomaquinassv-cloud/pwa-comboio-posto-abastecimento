@@ -48,6 +48,27 @@ const newFuelOptionInput = document.getElementById("new-fuel-option");
 const fuelOptionsList = document.getElementById("fuel-options-list");
 const lubeObservationWrap = document.getElementById("lube-observation-wrap");
 const lubeObservationInput = document.getElementById("lubeObservation");
+const fuelSection = document.getElementById("fuel-section");
+const serviceTypeBtns = document.querySelectorAll(".service-type-btn");
+
+// ── Tipo de servico ──────────────────────────────────────
+let tipoServico = "abastecimento";
+
+function updateFuelSection() {
+  const showFuel = tipoServico === "abastecimento" || tipoServico === "ambos";
+  fuelSection.style.display = showFuel ? "" : "none";
+  document.getElementById("receiptFuelType").required = showFuel;
+  document.getElementById("receiptLiters").required   = showFuel;
+}
+
+serviceTypeBtns.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    serviceTypeBtns.forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    tipoServico = btn.dataset.tipo;
+    updateFuelSection();
+  });
+});
 
 function attachTrailingBlocks(mode) {
   if (mode === "posto") {
@@ -428,7 +449,8 @@ receiptForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const formData = new FormData(receiptForm);
   const fuelType = String(formData.get("receiptFuelType") || "").trim();
-  if (!RECEIPT_FUEL_OPTIONS.includes(fuelType)) return;
+  const soLubrificacao = tipoServico === "lubrificacao";
+  if (!soLubrificacao && !RECEIPT_FUEL_OPTIONS.includes(fuelType)) return;
   const lubeActions = formData.getAll("lubeActions");
   const requiresObservation =
     lubeActions.includes("corretiva") || lubeActions.includes("completar_nivel");
@@ -446,6 +468,7 @@ receiptForm.addEventListener("submit", (event) => {
   const receipt = {
     id: makeId(),
     orderNumber,
+    tipoServico,
     vehicle,
     operatorDriver: String(formData.get("receiptOperator") || "").trim(),
     fuelType,
@@ -470,6 +493,9 @@ receiptForm.addEventListener("submit", (event) => {
   enqueueSyncEvent("recebimento", receipt);
   receiptForm.reset();
   receiptDateTimeInput.value = getNowLocalDateTimeInputValue();
+  tipoServico = "abastecimento";
+  serviceTypeBtns.forEach((b) => b.classList.toggle("active", b.dataset.tipo === "abastecimento"));
+  updateFuelSection();
   toggleLubeObservationField();
   updateOrderPreview();
   fillFuelSelects();
@@ -511,6 +537,7 @@ if ("serviceWorker" in navigator) {
 fillFuelSelects();
 renderFuelOptionsSettings();
 setDefaultDateTimes();
+updateFuelSection();
 toggleLubeObservationField();
 updateOrderPreview();
 updateConnectionStatus();
