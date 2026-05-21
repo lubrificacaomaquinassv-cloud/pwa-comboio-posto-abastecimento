@@ -10,14 +10,7 @@ const POST_FUEL_OPTIONS = [
   "Diesel S-500 Comum",
 ];
 const RECEIPT_FUEL_OPTIONS = [...POST_FUEL_OPTIONS];
-const API_BASE_URL = (window.APP_API_BASE_URL || "").replace(/\/$/, "");
-
-/** URL POST de sync: Node usa /lancamentos; Google Apps Script usa so o URL /exec. */
-function syncPostUrl() {
-  if (!API_BASE_URL) return "";
-  if (API_BASE_URL.indexOf("script.google.com") !== -1) return API_BASE_URL;
-  return `${API_BASE_URL}/lancamentos`;
-}
+// Sync direto no Supabase — ver config.js
 
 const form = document.getElementById("fuel-form");
 const receiptForm = document.getElementById("receipt-form");
@@ -48,27 +41,6 @@ const newFuelOptionInput = document.getElementById("new-fuel-option");
 const fuelOptionsList = document.getElementById("fuel-options-list");
 const lubeObservationWrap = document.getElementById("lube-observation-wrap");
 const lubeObservationInput = document.getElementById("lubeObservation");
-const fuelSection = document.getElementById("fuel-section");
-const serviceTypeBtns = document.querySelectorAll(".service-type-btn");
-
-// ── Tipo de servico ──────────────────────────────────────
-let tipoServico = "abastecimento";
-
-function updateFuelSection() {
-  const showFuel = tipoServico === "abastecimento" || tipoServico === "ambos";
-  fuelSection.style.display = showFuel ? "" : "none";
-  document.getElementById("receiptFuelType").required = showFuel;
-  document.getElementById("receiptLiters").required   = showFuel;
-}
-
-serviceTypeBtns.forEach((btn) => {
-  btn.addEventListener("click", () => {
-    serviceTypeBtns.forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    tipoServico = btn.dataset.tipo;
-    updateFuelSection();
-  });
-});
 
 function attachTrailingBlocks(mode) {
   if (mode === "posto") {
@@ -213,11 +185,6 @@ function savePendingSyncEvents(events) {
 
 function updateDbSyncStatus(customText) {
   const pending = getPendingSyncEvents().length;
-  if (!API_BASE_URL) {
-    dbSyncStatus.textContent = "Banco nao configurado (defina window.APP_API_BASE_URL).";
-    dbSyncStatus.className = "connection-status offline";
-    return;
-  }
   if (pending === 0) {
     dbSyncStatus.textContent = customText || "Sincronizacao com banco em dia.";
     dbSyncStatus.className = "connection-status online";
@@ -227,33 +194,86 @@ function updateDbSyncStatus(customText) {
   dbSyncStatus.className = "connection-status offline";
 }
 
-async function processPendingSyncEvents() {
-  if (!API_BASE_URL || !navigator.onLine) {
-    updateDbSyncStatus();
-    return;
+async function syncEventToSupabase(event) {
+  const SB_URL  = window.SUPABASE_URL;
+  const SB_ANON = window.SUPABASE_ANON;
+  if (!SB_URL || !SB_ANON) return false;
+
+  const headers = {
+    "Content-Type":  "application/json",
+    "apikey":        SB_ANON,
+    "Authorization": "Bearer " + SB_ANON,
+    "Prefer":        "return=minimal"
+  };
+
+  try {
+    if (event.type === "abastecimento") {
+      const p = event.payload;
+      const body = {
+        vehicle:     p.vehicle     || null,
+        fuel_type:   p.fuelType    || null,
+        liters:      parseFloat(p.liters) || null,
+        operator:    p.operatorDriver || null,
+        hourmeter:   p.hourmeterOdometer || null,
+        work_front:  p.workFront   || null,
+        work_type:   p.workType    || null,
+        created_at:  p.createdAt   || new Date().toISOString()
+      };
+      const r = await fetch(SB_URL + "/rest/v1/posto", { method: "POST", headers, body: JSON.stringify(body) });
+      return r.ok || r.status === 201;
+    }
+
+    if (event.type === "recebimento") {
+      const p = event.payload;
+      const body = {
+        order_number: p.orderNumber  || null,
+        tipo_servico: p.tipoServico  || "abastecimento",
+        vehicle:      p.vehicle      || null,
+        fuel_type:    p.fuelType     || null,
+        liters:       p.liters ? parseFloat(p.liters) : null,
+        operator:     p.operatorDriver || null,
+        hourmeter:    p.hourmeterOdometer || null,
+        location:     p.location     || null,
+        work_type:    p.workType     || null,
+        created_at:   p.createdAt    || new Date().toISOString()
+      };
+      const r = await fetch(SB_URL + "/rest/v1/comboio", { method: "POST", headers, body: JSON.stringify(body) });
+      if (!r.ok && r.status !== 201) return false;
+
+      // lubrificacao
+      const lub = p.lubrication;
+      if (lub && (lub.actions && lub.actions.length > 0)) {
+        const lubBody = {
+          order_number:  p.orderNumber || null,
+          vehicle:       p.vehicle     || null,
+          location:      p.location    || null,
+          actions:       (lub.actions || []).join(","),
+          oil_line1:     lub.oilLine1  || null,
+          oil_line2:     lub.oilLine2  || null,
+          filter_line1:  lub.filterLine1 || null,
+          filter_line2:  lub.filterLine2 || null,
+          observation:   lub.observation || null,
+          created_at:    p.createdAt   || new Date().toISOString()
+        };
+        await fetch(SB_URL + "/rest/v1/lubrificacao", { method: "POST", headers, body: JSON.stringify(lubBody) });
+      }
+      return true;
+    }
+  } catch(e) {
+    console.error("Sync error:", e);
+    return false;
   }
+  return false;
+}
+
+async function processPendingSyncEvents() {
+  if (!navigator.onLine) { updateDbSyncStatus(); return; }
   let queue = getPendingSyncEvents();
   while (queue.length) {
-    const event = queue[0];
-    try {
-      const url = syncPostUrl() + "?payload=" + encodeURIComponent(JSON.stringify(event));
-      const response = await fetch(url);
-      const text = await response.text();
-      let data = null;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        break;
-      }
-      if (!data || data.ok === false) {
-        console.error("Sync recusado:", data && data.error);
-        break;
-      }
-      queue = queue.slice(1);
-      savePendingSyncEvents(queue);
-    } catch {
-      break;
-    }
+    const ok = await syncEventToSupabase(queue[0]);
+    if (!ok) break;
+    queue = queue.slice(1);
+    savePendingSyncEvents(queue);
   }
   updateDbSyncStatus();
 }
@@ -266,10 +286,6 @@ function enqueueSyncEvent(type, payload) {
     payload,
     createdAt: new Date().toISOString(),
   };
-  const shSecret = typeof window !== "undefined" && window.SHEETS_SYNC_SECRET;
-  if (shSecret && String(shSecret).trim()) {
-    ev.secret = String(shSecret).trim();
-  }
   queue.push(ev);
   savePendingSyncEvents(queue);
   updateDbSyncStatus();
@@ -449,8 +465,7 @@ receiptForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const formData = new FormData(receiptForm);
   const fuelType = String(formData.get("receiptFuelType") || "").trim();
-  const soLubrificacao = tipoServico === "lubrificacao";
-  if (!soLubrificacao && !RECEIPT_FUEL_OPTIONS.includes(fuelType)) return;
+  if (!RECEIPT_FUEL_OPTIONS.includes(fuelType)) return;
   const lubeActions = formData.getAll("lubeActions");
   const requiresObservation =
     lubeActions.includes("corretiva") || lubeActions.includes("completar_nivel");
@@ -468,9 +483,7 @@ receiptForm.addEventListener("submit", (event) => {
   const receipt = {
     id: makeId(),
     orderNumber,
-    tipoServico,
     vehicle,
-    operatorDriver: String(formData.get("receiptOperator") || "").trim(),
     fuelType,
     liters: Number(formData.get("receiptLiters")).toFixed(1),
     location: String(formData.get("receiptLocation") || "").trim(),
@@ -493,9 +506,6 @@ receiptForm.addEventListener("submit", (event) => {
   enqueueSyncEvent("recebimento", receipt);
   receiptForm.reset();
   receiptDateTimeInput.value = getNowLocalDateTimeInputValue();
-  tipoServico = "abastecimento";
-  serviceTypeBtns.forEach((b) => b.classList.toggle("active", b.dataset.tipo === "abastecimento"));
-  updateFuelSection();
   toggleLubeObservationField();
   updateOrderPreview();
   fillFuelSelects();
@@ -537,7 +547,6 @@ if ("serviceWorker" in navigator) {
 fillFuelSelects();
 renderFuelOptionsSettings();
 setDefaultDateTimes();
-updateFuelSection();
 toggleLubeObservationField();
 updateOrderPreview();
 updateConnectionStatus();
