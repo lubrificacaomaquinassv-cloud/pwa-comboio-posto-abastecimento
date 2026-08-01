@@ -1,0 +1,25 @@
+PASTA COMPLETA — deve ter estes arquivos
+=========================================
+
+OBRIGATORIOS (na mesma pasta):
+  app.py
+  config.py
+  etl.py
+  npk.py
+  ui.py          <-- se faltar, da ERRO
+  requirements.txt
+  RODAR_PAINEL.bat
+
+PASTAS:
+  data\sample\   (3 arquivos demo)
+  scripts\        (gerar_dados_amostra.py)
+
+SE FALTAR ALGO
+--------------
+Duplo clique em:  ATUALIZAR_PASTA.bat
+(baixa tudo do GitHub automaticamente)
+
+DEPOIS
+------
+Duplo clique em:  RODAR_PAINEL.bat
+Link: http://localhost:8501
