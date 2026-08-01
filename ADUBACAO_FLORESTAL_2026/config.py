@@ -35,4 +35,4 @@ PATH_GIS_SAMPLE = DATA_SAMPLE / "talhoes_amostra.geojson"
 KML_LAYERS = ["Silvicultura (#2)", "Silvipastoril (#2)"]
 CRS_METRIC = "EPSG:31982"
 
-DASHBOARD_BUILD = "2026.08.01"
+DASHBOARD_BUILD = "2026.08.01-cloud"

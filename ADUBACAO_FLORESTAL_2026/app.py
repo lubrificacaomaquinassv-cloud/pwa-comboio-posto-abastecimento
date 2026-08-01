@@ -5,19 +5,13 @@ Cobertura (6 hortos) + Base/Subsolagem + mapa GIS + calculadora NPK.
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from config import (
-    DASHBOARD_BUILD,
-    PATH_BASE,
-    PATH_COBERTURA,
-    PATH_COBERTURA_SAMPLE,
-    PATH_GIS_SAMPLE,
-    PATH_KML,
-)
+from config import DASHBOARD_BUILD, PATH_BASE, PATH_COBERTURA, PATH_KML
 from etl import (
     cruzar_servico_gis,
     enriquecer_npk,
@@ -46,24 +40,65 @@ def hex_to_rgba(hex_color: str, alpha: int = 190) -> list[int]:
     return [int(h[i : i + 2], 16) for i in (0, 2, 4)] + [alpha]
 
 
+def _salvar_upload(uploaded, suffix: str) -> Path | None:
+    if uploaded is None:
+        return None
+    tmp = Path(tempfile.gettempdir()) / f"adubacao_{uploaded.file_id}{suffix}"
+    tmp.write_bytes(uploaded.getvalue())
+    return tmp
+
+
 @st.cache_data(show_spinner="Carregando planilhas e GIS…")
-def carregar_dados(path_cobertura: str, path_base: str, path_gis: str):
-    cobertura = load_cobertura(Path(path_cobertura) if Path(path_cobertura).exists() else None)
-    base = load_base(Path(path_base) if Path(path_base).exists() else None)
-    gis_path = Path(path_gis) if Path(path_gis).exists() else None
+def carregar_dados(
+    path_cobertura: str | None,
+    path_base: str | None,
+    path_gis: str | None,
+    cache_key: str,
+):
+    del cache_key  # invalida cache quando uploads mudam
+    cobertura = load_cobertura(Path(path_cobertura) if path_cobertura and Path(path_cobertura).exists() else None)
+    base = load_base(Path(path_base) if path_base and Path(path_base).exists() else None)
+    gis_path = Path(path_gis) if path_gis and Path(path_gis).exists() else None
     gis = load_talhoes_gis(gis_path)
     return cobertura, base, gis
 
 
 with st.sidebar:
     st.header("Fontes de dados")
-    path_cobertura = st.text_input("Planilha Cobertura", str(PATH_COBERTURA))
-    path_base = st.text_input("Planilha Base/Subsolagem", str(PATH_BASE))
-    path_gis = st.text_input("Cadastro KML / GeoJSON", str(PATH_KML))
+    modo = st.radio(
+        "Origem dos arquivos",
+        ["Caminhos locais (PC)", "Enviar arquivos (nuvem)"],
+        help="No PC use caminhos D:\\. Na internet, envie as planilhas e o KML.",
+    )
 
-    using_sample = not Path(path_cobertura).exists()
-    if using_sample:
-        st.info("Planilhas reais não encontradas — usando **dados amostra** em `data/sample/`.")
+    path_cobertura = path_base = path_gis = None
+    cache_key = "default"
+
+    if modo == "Caminhos locais (PC)":
+        path_cobertura = st.text_input("Planilha Cobertura", str(PATH_COBERTURA))
+        path_base = st.text_input("Planilha Base/Subsolagem", str(PATH_BASE))
+        path_gis = st.text_input("Cadastro KML / GeoJSON", str(PATH_KML))
+        cache_key = f"{path_cobertura}|{path_base}|{path_gis}"
+        if not Path(path_cobertura).exists():
+            st.info("Planilha de cobertura não encontrada — usando **dados amostra**.")
+    else:
+        st.markdown("Envie os 3 arquivos e clique em **Recarregar dados**.")
+        up_cobertura = st.file_uploader("Cobertura (.xlsx)", type=["xlsx"])
+        up_base = st.file_uploader("Base/Subsolagem (.xlsx)", type=["xlsx"])
+        up_gis = st.file_uploader("Cadastro GIS (.kml ou .geojson)", type=["kml", "geojson"])
+        if st.button("Recarregar dados", type="primary"):
+            st.cache_data.clear()
+        path_cobertura = str(_salvar_upload(up_cobertura, ".xlsx")) if up_cobertura else None
+        path_base = str(_salvar_upload(up_base, ".xlsx")) if up_base else None
+        if up_gis:
+            ext = Path(up_gis.name).suffix.lower() or ".kml"
+            path_gis = str(_salvar_upload(up_gis, ext))
+        cache_key = "|".join(
+            f"{u.name}:{u.size}" if u else "-"
+            for u in (up_cobertura, up_base, up_gis)
+        )
+        if not any([up_cobertura, up_base, up_gis]):
+            st.warning("Nenhum arquivo enviado — usando **dados amostra**.")
 
     servico = st.radio(
         "Serviço no mapa",
@@ -71,8 +106,14 @@ with st.sidebar:
         format_func=lambda x: "Adubação de Cobertura" if x == "cobertura" else "Base / Subsolagem",
     )
 
+    with st.expander("Publicar online"):
+        st.markdown(
+            "Deploy no **Streamlit Cloud**: main file `ADUBACAO_FLORESTAL_2026/app.py`. "
+            "Guia completo em `PUBLICAR_STREAMLIT.md`."
+        )
+
 try:
-    cobertura, base, gis = carregar_dados(path_cobertura, path_base, path_gis)
+    cobertura, base, gis = carregar_dados(path_cobertura, path_base, path_gis, cache_key)
 except Exception as exc:
     st.error(f"Erro ao carregar dados: {exc}")
     st.stop()
@@ -222,7 +263,9 @@ with tab_npk:
 
     st.divider()
     st.markdown("**Nutrientes nos talhões registrados**")
-    ops_npk = enriquecer_npk(operacional if horto_filtro == "Todos" else operacional[operacional["horto"] == horto_filtro])
+    ops_npk = enriquecer_npk(
+        operacional if horto_filtro == "Todos" else operacional[operacional["horto"] == horto_filtro]
+    )
     cols_npk = [
         c
         for c in [

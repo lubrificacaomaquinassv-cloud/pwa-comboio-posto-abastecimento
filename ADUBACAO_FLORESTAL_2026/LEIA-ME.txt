@@ -45,3 +45,13 @@ python -m unittest discover -s tests -v
 Escopo futuro (não incluído)
 ----------------------------
 - Custos de insumo e mão de obra
+
+Publicar online (Streamlit Cloud)
+---------------------------------
+Guia passo a passo: **PUBLICAR_STREAMLIT.md**
+
+Resumo:
+1. Acesse https://share.streamlit.io
+2. New app → repo `lubrificacaomaquinassv-cloud/pwa-comboio-posto-abastecimento`
+3. Branch `main`, main file `ADUBACAO_FLORESTAL_2026/app.py`
+4. Deploy → use **Enviar arquivos (nuvem)** na sidebar para carregar planilhas e KML
