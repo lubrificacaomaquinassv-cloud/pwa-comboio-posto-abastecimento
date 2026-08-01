@@ -1,6 +1,7 @@
 """Painel Adubação Florestal 2026 — Santa Virgínia."""
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -19,63 +20,98 @@ css()
 hero(TITULO, f"{SUBTITULO} · build {BUILD}")
 
 
-@st.cache_data
-def dados():
-    return load_cobertura(), load_base(), load_gis()
+def _salvar(upload, nome: str) -> str | None:
+    if upload is None:
+        return None
+    p = Path(tempfile.gettempdir()) / f"sv_adub_{nome}"
+    p.write_bytes(upload.getvalue())
+    return str(p)
+
+
+def _fp(path: str | None) -> str:
+    if not path:
+        return "none"
+    p = Path(path)
+    if not p.exists():
+        return "missing"
+    st = p.stat()
+    return f"{st.st_size}:{int(st.st_mtime_ns)}"
+
+
+@st.cache_data(show_spinner="Carregando planilhas e KML…")
+def carregar(pc: str | None, pb: str | None, pk: str | None, fpc: str, fpb: str, fpk: str):
+    del fpc, fpb, fpk  # chave de cache — conteúdo/timestamp dos arquivos
+    return (
+        load_cobertura(Path(pc) if pc else None),
+        load_base(Path(pb) if pb else None),
+        load_gis(Path(pk) if pk else None),
+    )
 
 
 def mapa(gdf):
-    g = gdf.to_crs(4326)
+    g = gdf.to_crs(4326).copy()
     c = g.geometry.union_all().centroid
-    m = folium.Map(location=[c.y, c.x], zoom_start=11, tiles="CartoDB dark_matter")
-    for _, r in g.iterrows():
-        cor = r.get("cor", CORES["sem_dado"])
+    fmap = folium.Map(location=[c.y, c.x], zoom_start=11, tiles="CartoDB dark_matter", control_scale=True)
+    geojson = json.loads(g.to_json())
+    for feat, (_, row) in zip(geojson["features"], g.iterrows()):
+        feat["properties"]["cor"] = row.get("cor", CORES["sem_dado"])
+        feat["properties"]["tip"] = (
+            f"Talhão {row.talhao} | {row.status} | "
+            f"{row.area_feita:.1f} ha feito | {row.area_rest:.1f} ha restante"
+        )
 
-        def estilo(_, col=cor):
-            return {"fillColor": col, "color": "#fff", "weight": 1, "fillOpacity": 0.75}
-
-        folium.GeoJson(r.geometry.__geo_interface__, style_function=estilo,
-                       tooltip=f"Talhão {r.talhao} | {r.status} | {r.area_feita:.1f}/{r.area_ha:.1f} ha").add_to(m)
-    return m
+    folium.GeoJson(
+        geojson,
+        style_function=lambda f: {
+            "fillColor": f["properties"].get("cor", CORES["sem_dado"]),
+            "color": "#ffffff",
+            "weight": 1,
+            "fillOpacity": 0.72,
+        },
+        tooltip=folium.GeoJsonTooltip(fields=["tip"], labels=False),
+    ).add_to(fmap)
+    return fmap
 
 
 with st.sidebar:
     st.markdown("### Dados")
-    st.caption("PC: caminhos D:\\ · Nuvem: upload abaixo")
+    st.caption("Nuvem: envie os 3 arquivos · PC: usa caminhos D:\\ automaticamente")
+
     up_c = st.file_uploader("Cobertura (.xlsx)", type=["xlsx"])
     up_b = st.file_uploader("Base (.xlsx)", type=["xlsx"])
     up_k = st.file_uploader("KML", type=["kml"])
-    if up_c or up_b or up_k:
-        tmp = Path(tempfile.gettempdir())
-        if up_c:
-            p = tmp / "cobertura.xlsx"; p.write_bytes(up_c.getvalue()); import config; config.PATH_COBERTURA = p
-        if up_b:
-            p = tmp / "base.xlsx"; p.write_bytes(up_b.getvalue()); import config; config.PATH_BASE = p
-        if up_k:
-            p = tmp / "fazenda.kml"; p.write_bytes(up_k.getvalue()); import config; config.PATH_KML = p
-        st.cache_data.clear()
+
+    pc = _salvar(up_c, "cobertura.xlsx") or (str(PATH_COBERTURA) if PATH_COBERTURA.exists() else None)
+    pb = _salvar(up_b, "base.xlsx") or (str(PATH_BASE) if PATH_BASE.exists() else None)
+    pk = _salvar(up_k, "fazenda.kml") or (str(PATH_KML) if PATH_KML.exists() else None)
 
     servico = st.selectbox("Serviço", ["cobertura", "base"], format_func=lambda x: "Cobertura" if x == "cobertura" else "Base/Subsolagem")
 
 try:
-    cob, base, gis = dados()
+    cob, base, gis = carregar(pc, pb, pk, _fp(pc), _fp(pb), _fp(pk))
+    fonte = "upload" if any([up_c, up_b, up_k]) else ("PC D:\\" if PATH_KML.exists() else "demo")
+    st.sidebar.success(
+        f"Fonte: {fonte} · GIS: {len(gis)} talhões · "
+        f"Cobertura: {cob['talhao'].nunique()} · Base: {len(base)} linhas"
+    )
 except Exception as e:
     st.error(f"Erro ao carregar: {e}")
     st.stop()
 
-ops = cob if servico == "cobertura" else base
 mapa_df = cruzar(gis, pd.concat([cob, base]), servico)
 show_kpis(kpis(mapa_df))
+
+st.caption("Mapa: região Igarapava/Delta (divisa SP/MG) — localização correta da Fazenda Santa Virgínia.")
 
 tab1, tab2, tab3 = st.tabs(["Mapa", "Talhões", "NPK"])
 
 with tab1:
-    components.html(mapa(mapa_df)._repr_html_(), height=520)
+    st.markdown("🟢 Concluído · 🔴 Pendente · ⚪ Sem registro na planilha")
+    components.html(mapa(mapa_df)._repr_html_(), height=540)
 
 with tab2:
-    cols = ["talhao", "status", "area_ha", "area_feita", "area_rest", "horto", "fertilizante"]
-    cols = [c for c in cols if c in mapa_df.columns]
-    tabela(mapa_df[cols].sort_values("talhao"))
+    cols = [c for c in ["talhao", "status", "area_ha", "area_feita", "area_rest", "horto"] if c in mapa_df.columns]
+    tabela(mapa_df[cols].sort_values(["status", "talhao"]), h=500)
 
 with tab3:
     c1, c2, c3 = st.columns(3)

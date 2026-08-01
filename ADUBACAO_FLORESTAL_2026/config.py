@@ -16,4 +16,4 @@ CRS_METRIC = "EPSG:31982"
 
 TITULO = "Adubação Florestal 2026"
 SUBTITULO = "Fazenda Santa Virgínia"
-BUILD = "2026.08.01"
+BUILD = "2026.08.01-fix3"

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
+from pyogrio import list_layers
 
 from config import CRS_METRIC, KML_LAYERS, PATH_BASE, PATH_COBERTURA, PATH_KML, PATH_SAMPLE
 
@@ -21,12 +22,25 @@ def _talhao(v) -> str | None:
     return f"{int(m.group(1))}{m.group(2)}" if m else (s or None)
 
 
-def _path(prim: Path, nome_sample: str) -> Path:
-    return prim if prim.exists() else PATH_SAMPLE / nome_sample
+def _base_talhao(chave: str | None) -> str | None:
+    if not chave:
+        return None
+    m = _TALHAO.match(chave)
+    return m.group(1) if m else chave
 
 
-def load_cobertura() -> pd.DataFrame:
-    path = _path(PATH_COBERTURA, "cobertura.xlsx")
+def _resolve(prim: Path | None, fallback_name: str) -> Path:
+    if prim and prim.exists():
+        return prim
+    if prim and not prim.exists():
+        sample = PATH_SAMPLE / fallback_name
+        if sample.exists():
+            return sample
+    return _resolve(None, fallback_name) if prim else PATH_SAMPLE / fallback_name
+
+
+def load_cobertura(path: Path | None = None) -> pd.DataFrame:
+    path = path if path and path.exists() else (PATH_COBERTURA if PATH_COBERTURA.exists() else PATH_SAMPLE / "cobertura.xlsx")
     partes = []
     for horto in pd.ExcelFile(path).sheet_names:
         raw = pd.read_excel(path, sheet_name=horto, header=None)
@@ -35,6 +49,7 @@ def load_cobertura() -> pd.DataFrame:
                       "dos_rec", "dos_real", "total_kg", "operador"]
         df = df[df["talhao"].notna()].copy()
         df["talhao"] = df["talhao"].map(_talhao)
+        df = df[df["talhao"].notna()]
         df["horto"] = horto.strip()
         df["servico"] = "cobertura"
         df["status"] = "concluido"
@@ -44,8 +59,8 @@ def load_cobertura() -> pd.DataFrame:
     return pd.concat(partes, ignore_index=True)
 
 
-def load_base() -> pd.DataFrame:
-    path = _path(PATH_BASE, "base.xlsx")
+def load_base(path: Path | None = None) -> pd.DataFrame:
+    path = path if path and path.exists() else (PATH_BASE if PATH_BASE.exists() else PATH_SAMPLE / "base.xlsx")
     raw = pd.read_excel(path, sheet_name="Subsolagem", header=None)
 
     def lado(cols, status):
@@ -61,22 +76,54 @@ def load_base() -> pd.DataFrame:
     return pd.concat([lado([1, 2, 3, 4, 5, 6, 7], "concluido"), lado([9, 10, 11, 12, 13, 14, 15], "pendente")], ignore_index=True)
 
 
-def load_gis() -> gpd.GeoDataFrame:
-    if PATH_KML.exists():
+def _kml_layers(kml: Path) -> list[str]:
+    disponiveis = [nome for nome, _ in list_layers(kml)]
+    alvo = [
+        nome for nome in disponiveis
+        if any(tag in nome.lower() for tag in ("silvicultura", "silvipastoril"))
+    ]
+    if alvo:
+        return alvo
+    for nome in KML_LAYERS:
+        if nome in disponiveis:
+            return [nome]
+    return disponiveis
+
+
+def load_gis(path: Path | None = None) -> gpd.GeoDataFrame:
+    kml = path if path and path.exists() else (PATH_KML if PATH_KML.exists() else None)
+    if kml:
         partes = []
-        for layer in KML_LAYERS:
-            g = gpd.read_file(PATH_KML, layer=layer)
-            if g.empty:
+        for layer in _kml_layers(kml):
+            g = gpd.read_file(kml, layer=layer)
+            if g.empty or "Name" not in g.columns:
                 continue
             g["talhao"] = g["Name"].astype(str).map(_talhao)
             partes.append(g[g["talhao"].notna()])
+        if not partes:
+            raise ValueError("KML sem talhões nas camadas Silvicultura/Silvipastoril.")
         gdf = pd.concat(partes, ignore_index=True)
     else:
         gdf = gpd.read_file(PATH_SAMPLE / "talhoes.geojson")
 
-    m = gdf.to_crs(CRS_METRIC)
-    gdf["area_ha"] = m.geometry.area / 10_000
+    metric = gdf.to_crs(CRS_METRIC)
+    gdf["area_ha"] = metric.geometry.area / 10_000
     return gdf.dissolve(by="talhao", aggfunc={"area_ha": "sum"}).reset_index()
+
+
+def _aplicar_match_parcial(gis: gpd.GeoDataFrame, agg: pd.DataFrame) -> gpd.GeoDataFrame:
+    r = gis.merge(agg, on="talhao", how="left")
+    extras = set(agg["talhao"]) - set(gis["talhao"])
+    for chave in extras:
+        base = _base_talhao(chave)
+        if not base or base not in set(gis["talhao"]):
+            continue
+        row = agg[agg["talhao"] == chave].iloc[0]
+        idx = r[r["talhao"] == base].index
+        r.loc[idx, "area_feita"] = r.loc[idx, "area_feita"].fillna(0) + row["area_feita"]
+        r.loc[idx, "status"] = row["status"]
+        r.loc[idx, "horto"] = row.get("horto")
+    return r
 
 
 def cruzar(gis: gpd.GeoDataFrame, ops: pd.DataFrame, servico: str) -> gpd.GeoDataFrame:
@@ -90,16 +137,22 @@ def cruzar(gis: gpd.GeoDataFrame, ops: pd.DataFrame, servico: str) -> gpd.GeoDat
         return r
 
     if servico == "cobertura":
-        agg = o.groupby("talhao").agg(area_feita=("ha_floresta", "sum"), horto=("horto", "first"), status=("status", "first")).reset_index()
+        agg = o.groupby("talhao").agg(
+            area_feita=("ha_floresta", "sum"), horto=("horto", "first"), status=("status", "first")
+        ).reset_index()
     else:
         rows = []
         for t, g in o.groupby("talhao"):
             ok = g[g["status"] == "concluido"]
-            rows.append({"talhao": t, "area_feita": ok["area_ha"].sum() if len(ok) else 0,
-                         "horto": g.iloc[0]["horto"], "status": "concluido" if len(ok) else "pendente"})
+            rows.append({
+                "talhao": t,
+                "area_feita": float(ok["area_ha"].sum()) if len(ok) else 0.0,
+                "horto": g.iloc[0]["horto"],
+                "status": "concluido" if len(ok) else "pendente",
+            })
         agg = pd.DataFrame(rows)
 
-    r = gis.merge(agg, on="talhao", how="left")
+    r = _aplicar_match_parcial(gis, agg)
     r["status"] = r["status"].fillna("sem_dado")
     r["area_feita"] = r["area_feita"].fillna(0)
     r.loc[r["status"] == "pendente", "area_feita"] = 0
