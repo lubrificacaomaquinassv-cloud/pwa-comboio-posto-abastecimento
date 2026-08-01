@@ -1,0 +1,16 @@
+COMO ABRIR O PAINEL — 3 PASSOS
+===============================
+
+1) Atualize o projeto (só se já tinha clonado antes):
+   git pull
+
+2) Duplo clique neste arquivo:
+   RODAR_PAINEL.bat
+
+3) Abra no navegador:
+   http://localhost:8501
+
+Pronto. Os arquivos do D:\ são lidos automaticamente.
+
+Se der erro de porta ocupada, feche outras janelas do Streamlit
+ou use o link que aparecer no terminal (ex.: localhost:8502).
