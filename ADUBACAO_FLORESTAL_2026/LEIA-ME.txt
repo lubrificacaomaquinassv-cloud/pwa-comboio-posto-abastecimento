@@ -1,0 +1,47 @@
+Adubação Florestal 2026 — Dashboard Streamlit
+=============================================
+
+Painel de acompanhamento de **adubação de cobertura** (6 hortos) e **base/subsolagem**, com mapa por talhão cruzando planilhas + cadastro GIS e calculadora de NPK.
+
+Fontes de dados (PC da fazenda)
+-------------------------------
+- Cobertura: `d:\Relatório Serviços\Adubação de Cobertura .xlsx`
+- Base/Subsolagem: `d:\Relatório Serviços\Subsolagem 2026\Adubação de Base 2026.xlsx`
+- GIS: `d:\fazenda_santa_virginia_completo.kml`
+
+Instalação
+----------
+```bash
+cd ADUBACAO_FLORESTAL_2026
+python -m pip install -r requirements.txt
+python scripts/gerar_dados_amostra.py   # só se quiser demo sem arquivos reais
+python -m streamlit run app.py
+```
+
+Ou duplo clique em `RODAR_PAINEL.bat` (Windows).
+
+Variáveis de ambiente (opcional)
+--------------------------------
+- `ADUBACAO_COBERTURA` — caminho da planilha de cobertura
+- `ADUBACAO_BASE` — caminho da planilha base/subsolagem
+- `ADUBACAO_KML` — caminho do KML
+
+Funcionalidades
+---------------
+- Mapa interativo por talhão (concluído / pendente / sem dado)
+- KPIs de área feita e restante
+- Filtro por horto
+- Exportação CSV
+- Calculadora NPK (fórmula N-P-K + dosagem + área)
+- Resumo de nutrientes aplicados por talhão
+
+Testes
+------
+```bash
+cd ADUBACAO_FLORESTAL_2026
+python -m unittest discover -s tests -v
+```
+
+Escopo futuro (não incluído)
+----------------------------
+- Custos de insumo e mão de obra
