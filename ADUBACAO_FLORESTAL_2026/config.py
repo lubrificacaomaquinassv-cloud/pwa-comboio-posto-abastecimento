@@ -33,6 +33,6 @@ PATH_GIS_SAMPLE = DATA_SAMPLE / "talhoes_amostra.geojson"
 KML_LAYERS = ["Silvicultura (#2)", "Silvipastoril (#2)"]
 CRS_METRIC = "EPSG:31982"
 
-PAINEL_BUILD = "2026.08.01-sv-v1"
+PAINEL_BUILD = "2026.08.01-v2"
 APP_TITLE = "Adubação Florestal 2026"
 APP_SUBTITLE = "Fazenda Santa Virgínia · Silvicultura & Silvipastoril"
