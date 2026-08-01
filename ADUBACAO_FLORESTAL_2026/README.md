@@ -1,28 +1,27 @@
-# Adubação Florestal 2026
+# Adubação Florestal 2026 — Fazenda Santa Virgínia
 
-Painel Streamlit — Fazenda Santa Virgínia.
+Painel operacional de **silvicultura / silvipastoril** (cobertura, base, mapa GIS, NPK).
+
+**Link oficial:** https://adubacao-florestal-sv.streamlit.app
 
 ## Streamlit Cloud
 
 | Campo | Valor |
 |-------|-------|
-| Repositório | `lubrificacaomaquinassv-cloud/pwa-comboio-posto-abastecimento` |
+| App | `adubacao-florestal-sv` |
 | Branch | `main` |
 | Main file | `ADUBACAO_FLORESTAL_2026/app.py` |
 
-## Arquivos
+> O código pode ficar temporariamente no repositório interno da organização.
+> O **nome que a gerência vê** é o link acima — não aparece “posto” ou “abastecimento”.
 
-```
-ADUBACAO_FLORESTAL_2026/
-  app.py          ← entrada
-  config.py       ← caminhos D:\
-  etl.py          ← planilhas + KML
-  npk.py          ← calculadora
-  ui.py           ← visual SV
-  requirements.txt
-  packages.txt
-  data/sample/    ← demo
-```
+## Repositório dedicado (recomendado)
+
+Para credibilidade institucional, crie no GitHub:
+
+`lubrificacaomaquinassv-cloud/adubacao-florestal-sv`
+
+Copie **todo o conteúdo desta pasta** para a raiz do novo repo e aponte o Streamlit Cloud para `app.py`.
 
 ## PC local
 

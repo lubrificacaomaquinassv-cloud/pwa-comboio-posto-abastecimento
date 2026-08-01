@@ -144,14 +144,17 @@ def load_gis(path: Path | None = None, *, permitir_demo: bool = False) -> gpd.Ge
         gdf = gdf.dissolve(by="talhao", aggfunc={"area_ha": "sum", "retiro_kml": "first"}).reset_index()
     else:
         gdf = gdf.dissolve(by="talhao", aggfunc={"area_ha": "sum"}).reset_index()
-    return gdf
+    return gdf[["talhao", "area_ha", "geometry"] + (["retiro_kml"] if "retiro_kml" in gdf.columns else [])]
 
 
 def _fmt_data(v) -> str:
-    if v is None or (isinstance(v, float) and pd.isna(v)):
+    if v is None or pd.isna(v):
         return "—"
     if hasattr(v, "strftime"):
-        return v.strftime("%d/%m/%Y")
+        try:
+            return v.strftime("%d/%m/%Y")
+        except (ValueError, AttributeError, OSError):
+            return "—"
     return str(v)
 
 
@@ -233,27 +236,43 @@ def _aplicar_match_parcial(gis: gpd.GeoDataFrame, agg: pd.DataFrame) -> gpd.GeoD
         r.loc[idx, "area_feita"] = r.loc[idx, "area_feita"].fillna(0) + row["area_feita"]
         r.loc[idx, "status"] = row["status"]
         r.loc[idx, "retiro"] = row.get("retiro") or row.get("horto")
-        for col in ("fertilizante", "data", "dosagem", "operador", "prestador"):
+        for col in ("fertilizante", "data_aplic", "dosagem", "operador", "prestador"):
             if col in row.index and col in r.columns:
                 r.loc[idx, col] = row[col]
     return r
 
 
 def _enriquecer_mapa(r: gpd.GeoDataFrame, servico: str) -> gpd.GeoDataFrame:
-    r["retiro"] = r.get("retiro", pd.Series("—", index=r.index)).fillna("—")
-    r["status"] = r["status"].fillna("sem_dado")
-    r["area_feita"] = r["area_feita"].fillna(0)
+    r = r.copy()
+    for col, default in (
+        ("retiro", "—"),
+        ("fertilizante", "—"),
+        ("operador", "—"),
+        ("prestador", "—"),
+    ):
+        if col not in r.columns:
+            r[col] = default
+        r[col] = r[col].fillna(default)
+
+    r["status"] = r["status"].fillna("sem_dado") if "status" in r.columns else "sem_dado"
+    r["area_feita"] = r["area_feita"].fillna(0) if "area_feita" in r.columns else 0
     r.loc[r["status"] == "pendente", "area_feita"] = 0
     r["area_rest"] = (r["area_ha"] - r["area_feita"]).clip(lower=0)
     r["cor"] = r["status"].map(CORES).fillna(CORES["sem_dado"])
     r["status_label"] = r["status"].map(STATUS_LABEL).fillna("Sem registro")
-    r["fertilizante"] = r.get("fertilizante", pd.Series("—", index=r.index)).fillna("—")
-    r["operador"] = r.get("operador", pd.Series("—", index=r.index)).fillna("—")
-    r["prestador"] = r.get("prestador", pd.Series("—", index=r.index)).fillna("—")
-    r["data_fmt"] = r.get("data", pd.Series(pd.NaT, index=r.index)).map(_fmt_data)
-    r["dosagem"] = r.get("dosagem", pd.Series(None, index=r.index)).apply(
-        lambda v: "—" if v is None or (isinstance(v, float) and pd.isna(v)) else f"{float(v):.0f}"
-    )
+
+    if "data_aplic" in r.columns:
+        r["data_fmt"] = pd.to_datetime(r["data_aplic"], errors="coerce").map(_fmt_data)
+    else:
+        r["data_fmt"] = "—"
+
+    if "dosagem" in r.columns:
+        r["dosagem"] = r["dosagem"].apply(
+            lambda v: "—" if v is None or (isinstance(v, float) and pd.isna(v)) else f"{float(v):.0f}"
+        )
+    else:
+        r["dosagem"] = "—"
+
     r["tooltip"] = r.apply(
         lambda row: f"Talhão {row.talhao} · Retiro {row.retiro} · {row.status_label} · "
         f"{row.area_feita:.1f}/{row.area_ha:.1f} ha",
@@ -282,7 +301,7 @@ def cruzar(gis: gpd.GeoDataFrame, ops: pd.DataFrame, servico: str) -> gpd.GeoDat
             retiro=("horto", "first"),
             status=("status", "first"),
             fertilizante=("fertilizante", _unicos),
-            data=("data", "max"),
+            data_aplic=("data", "max"),
             dosagem=("dos_real", "mean"),
             operador=("operador", _unicos),
         ).reset_index()
@@ -299,7 +318,7 @@ def cruzar(gis: gpd.GeoDataFrame, ops: pd.DataFrame, servico: str) -> gpd.GeoDat
                 "retiro": g.iloc[0]["horto"],
                 "status": "concluido" if len(ok) else "pendente",
                 "fertilizante": _unicos(src["fertilizante"]),
-                "data": pd.NaT,
+                "data_aplic": pd.NaT,
                 "dosagem": float(src["dosagem"].mean()) if len(src) and src["dosagem"].notna().any() else None,
                 "operador": "—",
                 "prestador": _unicos(src["prestador"]),

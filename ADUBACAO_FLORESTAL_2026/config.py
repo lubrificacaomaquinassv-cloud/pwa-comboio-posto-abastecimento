@@ -17,5 +17,6 @@ KML_LAYERS = ["Silvicultura (#2)", "Silvipastoril (#2)"]
 CRS_METRIC = "EPSG:31982"
 
 TITULO = "Adubação Florestal 2026"
-SUBTITULO = "Fazenda Santa Virgínia"
-BUILD = "2026.08.01-gis"
+SUBTITULO = "Fazenda Santa Virgínia · Gestão Florestal"
+APP_URL = "adubacao-florestal-sv.streamlit.app"
+BUILD = "2026.08.01-sv"

@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from config import BUILD, PATH_BASE, PATH_COBERTURA, PATH_KML, PATH_SAMPLE, SUBTITULO, TITULO, UPLOAD_DIR
+from config import APP_URL, BUILD, PATH_BASE, PATH_COBERTURA, PATH_KML, PATH_SAMPLE, SUBTITULO, TITULO, UPLOAD_DIR
 from etl import CORES, SERVICO_LABEL, cruzar, historico, kpis, load_base, load_cobertura, load_gis, retiros
 from npk import calcular
 from ui import (
@@ -25,7 +25,7 @@ from ui import (
 
 st.set_page_config(page_title=TITULO, page_icon="🌲", layout="wide")
 css()
-hero(TITULO, f"{SUBTITULO} · build {BUILD}")
+hero(TITULO, f"{SUBTITULO} · {APP_URL}")
 
 if "talhao_sel" not in st.session_state:
     st.session_state.talhao_sel = None
@@ -199,10 +199,16 @@ try:
         f"GIS: **{len(gis)} talhões** · Cobertura: {cob['talhao'].nunique()} · Base: {len(base)} linhas"
     )
 except Exception as e:
-    st.error(f"Erro ao carregar: {e}")
+    st.error("Não foi possível processar os dados. Verifique se as planilhas e o KML são os arquivos corretos da fazenda.")
+    st.caption(f"Detalhe técnico: {e}")
     st.stop()
 
-mapa_df = cruzar(gis, ops, servico)
+try:
+    mapa_df = cruzar(gis, ops, servico)
+except Exception as e:
+    st.error("Erro ao cruzar cadastro GIS com as planilhas. Confira se o KML é o da Fazenda Santa Virgínia.")
+    st.caption(f"Detalhe técnico: {e}")
+    st.stop()
 servico_label = SERVICO_LABEL[servico]
 lista_retiros = ["Todos"] + retiros(ops, servico)
 
