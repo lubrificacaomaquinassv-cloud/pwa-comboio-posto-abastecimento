@@ -10,10 +10,12 @@ PATH_KML = Path(r"d:\fazenda_santa_virginia_completo.kml")
 
 # Demo quando arquivos reais não existem (nuvem / teste)
 PATH_SAMPLE = ROOT / "data" / "sample"
+UPLOAD_DIR = ROOT / ".streamlit" / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 KML_LAYERS = ["Silvicultura (#2)", "Silvipastoril (#2)"]
 CRS_METRIC = "EPSG:31982"
 
 TITULO = "Adubação Florestal 2026"
 SUBTITULO = "Fazenda Santa Virgínia"
-BUILD = "2026.08.01-ui"
+BUILD = "2026.08.01-gis"

@@ -92,25 +92,59 @@ def _kml_layers(kml: Path) -> list[str]:
     return disponiveis
 
 
-def load_gis(path: Path | None = None) -> gpd.GeoDataFrame:
+def _col_talhao(g: gpd.GeoDataFrame) -> pd.Series | None:
+    for col in ("Name", "name", "NAME", "talhao", "Talhao", "TALHAO"):
+        if col in g.columns:
+            return g[col]
+    return None
+
+
+def _ler_camada_kml(kml: Path, layer: str) -> gpd.GeoDataFrame | None:
+    g = gpd.read_file(kml, layer=layer)
+    if g.empty:
+        return None
+    col = _col_talhao(g)
+    if col is None:
+        return None
+    g = g.copy()
+    g["talhao"] = col.astype(str).map(_talhao)
+    g["retiro_kml"] = layer.split("(")[0].strip() if "(" in layer else layer
+    return g[g["talhao"].notna()]
+
+
+def load_gis(path: Path | None = None, *, permitir_demo: bool = False) -> gpd.GeoDataFrame:
     kml = path if path and path.exists() else (PATH_KML if PATH_KML.exists() else None)
     if kml:
         partes = []
-        for layer in _kml_layers(kml):
-            g = gpd.read_file(kml, layer=layer)
-            if g.empty or "Name" not in g.columns:
+        layers = _kml_layers(kml)
+        for layer in layers:
+            try:
+                g = _ler_camada_kml(kml, layer)
+                if g is not None and not g.empty:
+                    partes.append(g)
+            except Exception:
                 continue
-            g["talhao"] = g["Name"].astype(str).map(_talhao)
-            partes.append(g[g["talhao"].notna()])
         if not partes:
-            raise ValueError("KML sem talhões nas camadas Silvicultura/Silvipastoril.")
+            raise ValueError(
+                f"KML carregado ({kml.name}) mas sem talhões reconhecíveis. "
+                f"Camadas lidas: {', '.join(layers[:6])}{'…' if len(layers) > 6 else ''}"
+            )
         gdf = pd.concat(partes, ignore_index=True)
-    else:
+    elif permitir_demo:
         gdf = gpd.read_file(PATH_SAMPLE / "talhoes.geojson")
+    else:
+        raise FileNotFoundError(
+            "Cadastro GIS (KML) não carregado. Envie o arquivo "
+            "fazenda_santa_virginia_completo.kml na barra lateral."
+        )
 
     metric = gdf.to_crs(CRS_METRIC)
     gdf["area_ha"] = metric.geometry.area / 10_000
-    return gdf.dissolve(by="talhao", aggfunc={"area_ha": "sum"}).reset_index()
+    if "retiro_kml" in gdf.columns:
+        gdf = gdf.dissolve(by="talhao", aggfunc={"area_ha": "sum", "retiro_kml": "first"}).reset_index()
+    else:
+        gdf = gdf.dissolve(by="talhao", aggfunc={"area_ha": "sum"}).reset_index()
+    return gdf
 
 
 def _fmt_data(v) -> str:
@@ -236,7 +270,10 @@ def cruzar(gis: gpd.GeoDataFrame, ops: pd.DataFrame, servico: str) -> gpd.GeoDat
         r["status"] = "sem_dado"
         r["area_feita"] = 0.0
         r["area_rest"] = r["area_ha"]
-        r["retiro"] = "—"
+        if "retiro_kml" in r.columns:
+            r["retiro"] = r["retiro_kml"].fillna("—")
+        else:
+            r["retiro"] = "—"
         return _enriquecer_mapa(r, servico)
 
     if servico == "cobertura":
@@ -270,6 +307,9 @@ def cruzar(gis: gpd.GeoDataFrame, ops: pd.DataFrame, servico: str) -> gpd.GeoDat
         agg = pd.DataFrame(rows)
 
     r = _aplicar_match_parcial(gis, agg)
+    if "retiro_kml" in r.columns:
+        sem = r["retiro"].isna() | (r["retiro"].astype(str) == "—")
+        r.loc[sem, "retiro"] = r.loc[sem, "retiro_kml"].fillna("—")
     r["retiro"] = r["retiro"].fillna("—")
     return _enriquecer_mapa(r, servico)
 

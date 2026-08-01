@@ -1,8 +1,8 @@
 """Painel Adubação Florestal 2026 — Santa Virgínia."""
 from __future__ import annotations
 
+import hashlib
 import json
-import tempfile
 from pathlib import Path
 
 import folium
@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from config import BUILD, PATH_BASE, PATH_COBERTURA, PATH_KML, SUBTITULO, TITULO
+from config import BUILD, PATH_BASE, PATH_COBERTURA, PATH_KML, PATH_SAMPLE, SUBTITULO, TITULO, UPLOAD_DIR
 from etl import CORES, SERVICO_LABEL, cruzar, historico, kpis, load_base, load_cobertura, load_gis, retiros
 from npk import calcular
 from ui import (
@@ -31,12 +31,32 @@ if "talhao_sel" not in st.session_state:
     st.session_state.talhao_sel = None
 
 
-def _salvar(upload, nome: str) -> str | None:
+def _registrar_upload(chave: str, upload) -> None:
     if upload is None:
-        return None
-    p = Path(tempfile.gettempdir()) / f"sv_adub_{nome}"
-    p.write_bytes(upload.getvalue())
-    return str(p)
+        return
+    st.session_state[f"up_{chave}"] = {"name": upload.name, "data": upload.getvalue()}
+
+
+def _hash_upload(chave: str) -> str:
+    info = st.session_state.get(f"up_{chave}")
+    if not info:
+        return "none"
+    return hashlib.md5(info["data"]).hexdigest()[:16]
+
+
+def _resolver_arquivo(chave: str, nome_padrao: str, fallback_pc: Path, sample: str | None = None) -> tuple[str | None, str]:
+    info = st.session_state.get(f"up_{chave}")
+    if info:
+        dest = UPLOAD_DIR / f"{chave}_{info['name']}"
+        dest.write_bytes(info["data"])
+        return str(dest), "upload"
+    if fallback_pc.exists():
+        return str(fallback_pc), "pc"
+    if sample:
+        demo = PATH_SAMPLE / sample
+        if demo.exists():
+            return str(demo), "demo"
+    return None, "ausente"
 
 
 def _fp(path: str | None) -> str:
@@ -45,24 +65,25 @@ def _fp(path: str | None) -> str:
     p = Path(path)
     if not p.exists():
         return "missing"
-    st_file = p.stat()
-    return f"{st_file.st_size}:{int(st_file.st_mtime_ns)}"
+    data = p.read_bytes()
+    return hashlib.md5(data).hexdigest()[:16]
 
 
 @st.cache_data(show_spinner="Carregando planilhas e KML…")
-def carregar(pc: str | None, pb: str | None, pk: str | None, fpc: str, fpb: str, fpk: str):
-    del fpc, fpb, fpk
+def carregar(pc: str | None, pb: str | None, pk: str, fpc: str, fpb: str, fpk: str):
     return (
         load_cobertura(Path(pc) if pc else None),
         load_base(Path(pb) if pb else None),
-        load_gis(Path(pk) if pk else None),
+        load_gis(Path(pk)),
     )
 
 
 def mapa(gdf: pd.DataFrame, destaque: str | None = None):
     g = gdf.to_crs(4326).copy()
-    c = g.geometry.union_all().centroid
-    fmap = folium.Map(location=[c.y, c.x], zoom_start=12, tiles="CartoDB dark_matter", control_scale=True)
+    bounds = g.total_bounds
+    centro = g.geometry.union_all().centroid
+    fmap = folium.Map(location=[centro.y, centro.x], zoom_start=12, tiles="CartoDB dark_matter", control_scale=True)
+    fmap.fit_bounds([[bounds[1], bounds[0]], [bounds[3], bounds[2]]], padding=(20, 20))
     folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         attr="Esri",
@@ -112,15 +133,37 @@ def _filtrar(gdf: pd.DataFrame, retiro: str, busca: str) -> pd.DataFrame:
 
 with st.sidebar:
     st.markdown("### Dados")
-    st.caption("Nuvem: envie os 3 arquivos · PC: usa caminhos D:\\ automaticamente")
+    st.caption("Envie os 3 arquivos. Permanecem na sessão até você limpar ou recarregar a página.")
 
-    up_c = st.file_uploader("Cobertura (.xlsx)", type=["xlsx"])
-    up_b = st.file_uploader("Base (.xlsx)", type=["xlsx"])
-    up_k = st.file_uploader("KML", type=["kml"])
+    up_c = st.file_uploader("Cobertura (.xlsx)", type=["xlsx"], key="fu_cob")
+    up_b = st.file_uploader("Base (.xlsx)", type=["xlsx"], key="fu_base")
+    up_k = st.file_uploader("KML da fazenda", type=["kml", "kmz"], key="fu_kml")
 
-    pc = _salvar(up_c, "cobertura.xlsx") or (str(PATH_COBERTURA) if PATH_COBERTURA.exists() else None)
-    pb = _salvar(up_b, "base.xlsx") or (str(PATH_BASE) if PATH_BASE.exists() else None)
-    pk = _salvar(up_k, "fazenda.kml") or (str(PATH_KML) if PATH_KML.exists() else None)
+    _registrar_upload("cobertura", up_c)
+    _registrar_upload("base", up_b)
+    _registrar_upload("kml", up_k)
+
+    if st.button("Limpar arquivos enviados", use_container_width=True):
+        for k in ("cobertura", "base", "kml"):
+            st.session_state.pop(f"up_{k}", None)
+        carregar.clear()
+        st.rerun()
+
+    pc, orig_c = _resolver_arquivo("cobertura", "cobertura.xlsx", PATH_COBERTURA, "cobertura.xlsx")
+    pb, orig_b = _resolver_arquivo("base", "base.xlsx", PATH_BASE, "base.xlsx")
+    pk, orig_k = _resolver_arquivo("kml", "fazenda.kml", PATH_KML, None)
+
+    st.markdown("**Arquivos ativos**")
+    for rotulo, orig, path in [
+        ("Cobertura", orig_c, pc),
+        ("Base", orig_b, pb),
+        ("KML/GIS", orig_k, pk),
+    ]:
+        if path:
+            mb = Path(path).stat().st_size / 1024 / 1024
+            st.markdown(f"✅ {rotulo}: `{Path(path).name}` ({mb:.1f} MB) · _{orig}_")
+        else:
+            st.markdown(f"❌ {rotulo}: não carregado")
 
     servico = st.selectbox(
         "Serviço",
@@ -128,13 +171,32 @@ with st.sidebar:
         format_func=lambda x: "Cobertura" if x == "cobertura" else "Base/Subsolagem",
     )
 
+if not pk:
+    st.error(
+        "**Cadastro GIS (KML) obrigatório.** Sem ele o painel não mostra a Fazenda Santa Virgínia. "
+        "Envie **fazenda_santa_virginia_completo.kml** na barra lateral e aguarde o carregamento."
+    )
+    st.info(
+        "Após o deploy/reload da página é preciso **reenviar os 3 arquivos**. "
+        "Use o botão *Limpar arquivos enviados* se precisar trocar o KML."
+    )
+    st.stop()
+
 try:
-    cob, base, gis = carregar(pc, pb, pk, _fp(pc), _fp(pb), _fp(pk))
+    cob, base, gis = carregar(
+        pc, pb, pk,
+        _hash_upload("cobertura") or _fp(pc),
+        _hash_upload("base") or _fp(pb),
+        _hash_upload("kml") or _fp(pk),
+    )
     ops = pd.concat([cob, base], ignore_index=True)
-    fonte = "upload" if any([up_c, up_b, up_k]) else ("PC D:\\" if PATH_KML.exists() else "demo")
+    if orig_k == "upload":
+        mb = Path(pk).stat().st_size / 1024 / 1024
+        st.success(f"✅ GIS real carregado: **{Path(pk).name}** ({mb:.1f} MB) · **{len(gis)} talhões**")
+    elif orig_c == "demo" or orig_b == "demo":
+        st.warning("Planilhas em modo demo — envie Cobertura e Base reais para KPIs corretos.")
     st.sidebar.success(
-        f"Fonte: {fonte} · GIS: {len(gis)} talhões · "
-        f"Cobertura: {cob['talhao'].nunique()} · Base: {len(base)} linhas"
+        f"GIS: **{len(gis)} talhões** · Cobertura: {cob['talhao'].nunique()} · Base: {len(base)} linhas"
     )
 except Exception as e:
     st.error(f"Erro ao carregar: {e}")
