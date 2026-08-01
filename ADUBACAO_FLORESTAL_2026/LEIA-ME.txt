@@ -1,25 +1,22 @@
-PASTA COMPLETA — deve ter estes arquivos
-=========================================
+PAINEL ADUBACAO FLORESTAL 2026
+==============================
 
-OBRIGATORIOS (na mesma pasta):
-  app.py
-  config.py
-  etl.py
-  npk.py
-  ui.py          <-- se faltar, da ERRO
-  requirements.txt
-  RODAR_PAINEL.bat
+ABRIR O PAINEL (internet — igual aos outros painéis SV)
+--------------------------------------------------------
+Duplo clique em:
 
-PASTAS:
-  data\sample\   (3 arquivos demo)
-  scripts\        (gerar_dados_amostra.py)
+   ABRIR PAINEL ADUBACAO.url
 
-SE FALTAR ALGO
---------------
-Duplo clique em:  ATUALIZAR_PASTA.bat
-(baixa tudo do GitHub automaticamente)
+Ou abra no navegador:
 
-DEPOIS
-------
-Duplo clique em:  RODAR_PAINEL.bat
+   https://adubacao-florestal-sv.streamlit.app
+
+Na sidebar: confirme os caminhos D:\ ou envie as planilhas.
+
+
+Só se quiser rodar no PC (offline)
+-----------------------------------
+Duplo clique em RODAR_PAINEL.bat
 Link: http://localhost:8501
+
+Se a pasta estiver vazia: duplo clique em BAIXAR E ABRIR.bat
