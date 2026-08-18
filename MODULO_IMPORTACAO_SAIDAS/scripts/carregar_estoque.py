@@ -16,14 +16,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from codigo_sap import normalizar_codigo_sap  # noqa: E402
 from supabase_client import get_client  # noqa: E402
-
-
-def normalizar_codigo(valor: str) -> str:
-    txt = str(valor).strip()
-    if txt.endswith(".0") and txt[:-2].isdigit():
-        return txt[:-2]
-    return txt
 
 
 def ler_csv(caminho: Path) -> list[dict]:
@@ -31,7 +25,7 @@ def ler_csv(caminho: Path) -> list[dict]:
         rows = list(csv.DictReader(fh, delimiter=";"))
     out: list[dict] = []
     for row in rows:
-        codigo = normalizar_codigo(row.get("codigo_sap", ""))
+        codigo = normalizar_codigo_sap(row.get("codigo_sap", ""))
         if not codigo:
             continue
         qtd = float(str(row.get("em_estoque", "0")).replace(",", "."))

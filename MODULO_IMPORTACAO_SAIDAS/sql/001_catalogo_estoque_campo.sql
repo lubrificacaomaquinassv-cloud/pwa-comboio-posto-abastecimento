@@ -27,10 +27,10 @@ CREATE TABLE IF NOT EXISTS public.estoque_sap_campo (
   atualizado_em   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Exemplo: incluir item 2333 manualmente (já aplicado em 18/08/2026)
+-- Exemplo: incluir item 02333 manualmente (corrigido em 18/08/2026)
 -- INSERT INTO public.dim_catalogo_sap_campo (codigo_sap, descricao_sap, descricao_resumida, unidade_estoque, categoria, deposito_sap, fonte_arquivo)
--- VALUES ('2333', 'GEL IRRIGAÇÃO FLOBOND A-30 SC 25 KG', 'Gel Irrigação Flobond A-30 SC 25 KG', 'KG', 'Defensivos', 'FSV-MAN', 'inclusao_manual');
+-- VALUES ('02333', 'GEL IRRIGAÇÃO FLOBOND A-30 SC 25 KG', 'Gel Irrigação Flobond A-30 SC 25 KG', 'KG', 'Defensivos', 'FSV-MAN', 'inclusao_manual');
 --
 -- INSERT INTO public.estoque_sap_campo (codigo_sap, em_estoque, unidade)
--- VALUES ('2333', 321, 'KG')
+-- VALUES ('02333', 321, 'KG')
 -- ON CONFLICT (codigo_sap) DO UPDATE SET em_estoque = EXCLUDED.em_estoque, unidade = EXCLUDED.unidade, atualizado_em = NOW();

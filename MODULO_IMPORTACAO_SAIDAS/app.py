@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from carregar_catalogo import ler_csv, upsert_catalogo  # noqa: E402
 from carregar_estoque import ler_csv as ler_estoque_csv, upsert_estoque  # noqa: E402
+from codigo_sap import normalizar_codigo_sap  # noqa: E402
 
 st.set_page_config(
     page_title="Importação Catálogo / Estoque",
@@ -27,7 +28,7 @@ aba_cat, aba_est, aba_arq = st.tabs(["Catálogo", "Estoque", "Arquivos CSV"])
 with aba_cat:
     st.subheader("Incluir / atualizar item no catálogo")
     with st.form("form_catalogo"):
-        codigo = st.text_input("Código SAP", placeholder="2333")
+        codigo = st.text_input("Código SAP", placeholder="02333")
         desc_sap = st.text_input("Descrição SAP", placeholder="GEL IRRIGAÇÃO FLOBOND A-30 SC 25 KG")
         desc_res = st.text_input("Descrição resumida", placeholder="Gel Irrigação Flobond A-30 SC 25 KG")
         unidade = st.selectbox("Unidade", ["KG", "LT", "UN", "SC", "GL"])
@@ -37,7 +38,7 @@ with aba_cat:
         ok = st.form_submit_button("Gravar catálogo", type="primary")
     if ok and codigo and desc_sap:
         item = {
-            "codigo_sap": codigo.strip(),
+            "codigo_sap": normalizar_codigo_sap(codigo.strip()),
             "descricao_sap": desc_sap.strip(),
             "descricao_resumida": (desc_res or desc_sap).strip(),
             "unidade_estoque": unidade,
@@ -53,12 +54,12 @@ with aba_cat:
 with aba_est:
     st.subheader("Atualizar saldo no painel")
     with st.form("form_estoque"):
-        codigo_e = st.text_input("Código SAP ", placeholder="2333", key="cod_est")
+        codigo_e = st.text_input("Código SAP ", placeholder="02333", key="cod_est")
         qtd = st.number_input("Quantidade em estoque", min_value=0.0, step=1.0, value=0.0)
         unidade_e = st.selectbox("Unidade ", ["KG", "LT", "UN", "SC", "GL"], key="uni_est")
         ok_e = st.form_submit_button("Gravar estoque", type="primary")
     if ok_e and codigo_e:
-        item = {"codigo_sap": codigo_e.strip(), "em_estoque": float(qtd), "unidade": unidade_e}
+        item = {"codigo_sap": normalizar_codigo_sap(codigo_e.strip()), "em_estoque": float(qtd), "unidade": unidade_e}
         n = upsert_estoque([item])
         st.success(f"Saldo gravado para {codigo_e} ({n} registro).")
 

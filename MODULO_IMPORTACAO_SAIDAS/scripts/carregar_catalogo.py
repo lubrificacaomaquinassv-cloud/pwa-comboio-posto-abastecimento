@@ -16,6 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
+from codigo_sap import normalizar_codigo_sap  # noqa: E402
 from supabase_client import get_client  # noqa: E402
 
 CAMPOS = (
@@ -31,13 +32,6 @@ CAMPOS = (
 )
 
 
-def normalizar_codigo(valor: str) -> str:
-    txt = str(valor).strip()
-    if txt.endswith(".0") and txt[:-2].isdigit():
-        return txt[:-2]
-    return txt
-
-
 def ler_csv(caminho: Path) -> list[dict]:
     with caminho.open(encoding="utf-8-sig", newline="") as fh:
         rows = list(csv.DictReader(fh, delimiter=";"))
@@ -48,7 +42,7 @@ def ler_csv(caminho: Path) -> list[dict]:
         item = {k: (row.get(k) or "").strip() for k in CAMPOS if k in row or k in CAMPOS}
         if not item.get("codigo_sap"):
             continue
-        item["codigo_sap"] = normalizar_codigo(item["codigo_sap"])
+        item["codigo_sap"] = normalizar_codigo_sap(item["codigo_sap"])
         item.setdefault("ativo", "true")
         item["ativo"] = str(item["ativo"]).lower() in {"1", "true", "sim", "s", "yes", "y"}
         item.setdefault("deposito_sap", "FSV-MAN")
