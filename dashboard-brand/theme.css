@@ -1,0 +1,87 @@
+/*
+  Santa Virgínia — Tema padrão dos dashboards operacionais
+  Compatível com Tailwind / shadcn (Lovable)
+*/
+
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap");
+
+:root {
+  --radius: 0.625rem;
+
+  /* Superfícies */
+  --background: oklch(17% 0.018 155);
+  --foreground: oklch(96% 0.008 140);
+  --card: oklch(22% 0.02 155);
+  --card-foreground: oklch(96% 0.008 140);
+  --popover: oklch(22% 0.02 155);
+  --popover-foreground: oklch(96% 0.008 140);
+
+  /* Marca */
+  --primary: oklch(72% 0.16 145);
+  --primary-foreground: oklch(18% 0.03 150);
+  --secondary: oklch(28% 0.025 155);
+  --secondary-foreground: oklch(95% 0.01 140);
+  --muted: oklch(28% 0.025 155);
+  --muted-foreground: oklch(72% 0.02 150);
+  --accent: oklch(32% 0.04 150);
+  --accent-foreground: oklch(96% 0.008 140);
+
+  /* Estados */
+  --destructive: oklch(65% 0.19 30);
+  --destructive-foreground: oklch(98% 0.005 140);
+  --border: oklch(100% 0 0 / 12%);
+  --input: oklch(100% 0 0 / 16%);
+  --ring: oklch(72% 0.16 145);
+
+  /* Gráficos */
+  --chart-1: oklch(78% 0.16 140);
+  --chart-2: oklch(82% 0.15 130);
+  --chart-3: oklch(82% 0.16 85);
+  --chart-4: oklch(72% 0.12 230);
+  --chart-5: oklch(68% 0.17 30);
+
+  /* Sidebar */
+  --sidebar: oklch(20% 0.02 155);
+  --sidebar-foreground: oklch(96% 0.008 140);
+  --sidebar-primary: oklch(72% 0.16 145);
+  --sidebar-primary-foreground: oklch(18% 0.03 150);
+  --sidebar-accent: oklch(28% 0.025 155);
+  --sidebar-accent-foreground: oklch(96% 0.008 140);
+  --sidebar-border: oklch(100% 0 0 / 12%);
+  --sidebar-ring: oklch(72% 0.16 145);
+
+  /* Marca estendida */
+  --sv-blue: #0d4f8b;
+  --sv-green: #5cb86a;
+  --sv-green-soft: #78b889;
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Fundo padrão com wallpaper */
+.sv-dashboard-shell {
+  min-height: 100vh;
+  background-color: var(--background);
+  background-image: url("./assets/dashboard-background-2560x1440.png");
+  background-size: cover;
+  background-position: center top;
+  background-attachment: fixed;
+}
+
+.sv-dashboard-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    oklch(17% 0.018 155 / 72%) 0%,
+    oklch(17% 0.018 155 / 88%) 100%
+  );
+  z-index: 0;
+}
+
+.sv-dashboard-shell > * {
+  position: relative;
+  z-index: 1;
+}
