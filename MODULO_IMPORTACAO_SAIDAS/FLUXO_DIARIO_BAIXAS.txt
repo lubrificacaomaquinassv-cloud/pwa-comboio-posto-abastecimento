@@ -1,0 +1,110 @@
+FLUXO DIÁRIO — BAIXAS SAP + WHATSAPP + PAINEL LOVABLE
+======================================================
+
+Santa Virgínia — Almoxarifado Central
+Painel: https://estoque-verde-ouro.lovable.app/
+
+
+VISÃO RÁPIDA (ordem do dia)
+---------------------------
+  1. Baixa no SAP  →  salvar Excel em BAIXAS_SAP
+  2. Mensagens WhatsApp  →  lançar no Streamlit (saídas operacionais)
+  3. CONCILIAR_BAIXA_SAP.bat     ← cruza SAP × WhatsApp
+  4. CARREGAR_ESTOQUE.bat        ← atualiza saldos no painel
+  5. CARREGAR_CATALOGO.bat       ← SÓ se passo 3 avisar item ignorado
+
+
+DETALHE DE CADA ETAPA
+---------------------
+
+┌─────────────────────────────────────────────────────────────────┐
+│ ETAPA 1 — SAP (origem oficial)                                  │
+├─────────────────────────────────────────────────────────────────┤
+│ • Faça a baixa no SAP como de costume                           │
+│ • Exporte / salve o Excel da movimentação                       │
+│ • Coloque o arquivo na pasta:                                   │
+│     C:\Users\hmauricio\Desktop\BAIXAS_SAP                       │
+│   (pode ser mais de um .xlsx no mesmo dia)                      │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ ETAPA 2 — Campo (saída física / WhatsApp)                       │
+├─────────────────────────────────────────────────────────────────┤
+│ • Copie as mensagens de retirada do WhatsApp                    │
+│ • Abra o Streamlit do módulo (RODAR_APP.bat ou painel SV)       │
+│ • Confirme destino, responsável, produto e quantidade           │
+│ • Isso grava as "saídas operacionais" (o que saiu na prática)   │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ ETAPA 3 — CONCILIAR_BAIXA_SAP.bat  (obrigatório todo dia)      │
+├─────────────────────────────────────────────────────────────────┤
+│ • Lê os Excel de BAIXAS_SAP                                     │
+│ • Cruza com as saídas do Streamlit/WhatsApp                     │
+│ • Marca status SAP = conciliado                                 │
+│ • Mostra resumo no final da execução                            │
+│                                                                 │
+│ ATENÇÃO — leia a saída do script:                               │
+│   "Ignorados (sem cadastro no catalogo): N"                     │
+│   → Se N = 0  →  pule o passo 5 (catálogo)                      │
+│   → Se N > 0  →  anote os códigos e vá ao passo 5               │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ ETAPA 4 — CARREGAR_ESTOQUE.bat  (obrigatório todo dia)          │
+├─────────────────────────────────────────────────────────────────┤
+│ • Atualiza public.estoque_sap_campo                             │
+│ • Publica os saldos atuais no painel Lovable                   │
+│ • Use dados\estoque_inclusoes.csv OU export SAP conforme script │
+│ • Depois: F5 em https://estoque-verde-ouro.lovable.app/         │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ ETAPA 5 — CARREGAR_CATALOGO.bat  (SOMENTE QUANDO NECESSÁRIO)    │
+├─────────────────────────────────────────────────────────────────┤
+│ NÃO rode todo dia na rotina de baixas.                          │
+│                                                                 │
+│ Use APENAS quando:                                              │
+│   • CONCILIAR mostrou "Ignorados (sem cadastro no catalogo)"    │
+│   • Entrou material NOVO que nunca existiu no painel            │
+│   • Código SAP novo (ex.: 02333) ainda não cadastrado           │
+│                                                                 │
+│ Passos:                                                         │
+│   1. Edite dados\catalogo_inclusoes.csv (código com 5 dígitos)  │
+│   2. Execute CARREGAR_CATALOGO.bat                              │
+│   3. Atualize saldo em dados\estoque_inclusoes.csv se preciso   │
+│   4. Execute CARREGAR_ESTOQUE.bat                               │
+│   5. Rode CONCILIAR_BAIXA_SAP.bat de novo                       │
+└─────────────────────────────────────────────────────────────────┘
+
+
+RESPOSTA DIRETA: PRECISO RODAR CARREGAR_CATALOGO DEPOIS DA BAIXA?
+------------------------------------------------------------------
+  NÃO — na rotina diária normal de baixas.
+
+  Fluxo típico (itens já cadastrados):
+    SAP → WhatsApp/Streamlit → CONCILIAR → CARREGAR_ESTOQUE → F5 painel
+
+  CARREGAR_CATALOGO entra só na exceção:
+    material novo / mensagem "sem cadastro no catalogo" / código ignorado
+
+
+CHECKLIST FIM DO DIA
+--------------------
+  [ ] Excel SAP na pasta BAIXAS_SAP
+  [ ] Saídas WhatsApp confirmadas no Streamlit
+  [ ] CONCILIAR_BAIXA_SAP.bat executado (sem pendências críticas)
+  [ ] CARREGAR_ESTOQUE.bat executado
+  [ ] Painel Lovable atualizado (F5) — saldos coerentes
+  [ ] Se houve "Ignorados (sem cadastro)": CARREGAR_CATALOGO + repetir conciliação
+
+
+DÚVIDA COMUM — CÓDIGO COM ZERO
+------------------------------
+  SAP usa 5 dígitos: 02333, 02023, 02156
+  Se ignorar item, confira se o catálogo tem o código COM zero à esquerda.
+
+
+PASTA DO PROJETO
+----------------
+  d:\pwa-comboio-posto-abastecimento\MODULO_IMPORTACAO_SAIDAS\

@@ -151,3 +151,17 @@ R: Atualize estoque_inclusoes.csv e execute CARREGAR_ESTOQUE.bat
 
 
 Suporte interno: equipe SIGCF / Almoxarifado Central
+
+
+FLUXO DIÁRIO DE BAIXAS (resumo)
+-------------------------------
+Ver arquivo completo: FLUXO_DIARIO_BAIXAS.txt
+
+  1. Baixa SAP → Excel em C:\Users\hmauricio\Desktop\BAIXAS_SAP
+  2. WhatsApp → lançar no Streamlit
+  3. CONCILIAR_BAIXA_SAP.bat
+  4. CARREGAR_ESTOQUE.bat
+  5. CARREGAR_CATALOGO.bat  →  SÓ se passo 3 mostrar "Ignorados (sem cadastro no catalogo)"
+
+Na rotina diária de baixas NÃO é necessário rodar CARREGAR_CATALOGO.
+Use CARREGAR_CATALOGO apenas para material NOVO ainda não cadastrado no painel.
