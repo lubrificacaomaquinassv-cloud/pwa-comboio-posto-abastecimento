@@ -6,3 +6,6 @@ backend/data/
 .DS_Store
 .env
 .env.*
+MODULO_IMPORTACAO_SAIDAS/.streamlit/secrets.toml
+MODULO_IMPORTACAO_SAIDAS/.venv/
+MODULO_IMPORTACAO_SAIDAS/**/__pycache__/

@@ -1,0 +1,167 @@
+MODULO IMPORTACAO SAIDAS — Catálogo e Estoque (Painel Lovable)
+==============================================================
+
+Santa Virgínia Agropecuária e Florestal
+Almoxarifado Central — integração com https://estoque-verde-ouro.lovable.app/
+
+Este módulo grava dados nas tabelas Supabase:
+  • public.dim_catalogo_sap_campo  → catálogo (nome, unidade, categoria)
+  • public.estoque_sap_campo       → saldo exibido no dashboard
+
+Projeto Supabase: azhpxhrwhegfysoeqmft
+
+
+ITEM INCLUÍDO NESTA VERSÃO (18/08/2026)
+---------------------------------------
+  02333 — GEL IRRIGAÇÃO FLOBOND A-30 SC 25 KG
+  (Código SAP com zero à esquerda; no SIGALMOX pode aparecer como 2333)
+  Categoria : Defensivos
+  Depósito  : FSV-MAN
+  Unidade   : KG
+  Entrada   : 200 KG registrada no SIGALMOX
+  Saldo atual no painel: 321 KG (total consolidado)
+
+  Já aplicado no banco. Confira em:
+  https://estoque-verde-ouro.lovable.app/  (busque "02333" ou "Flobond")
+
+
+ESTRUTURA DA PASTA
+------------------
+MODULO_IMPORTACAO_SAIDAS/
+├── dados/
+│   ├── catalogo_inclusoes.csv   ← novos itens de catálogo
+│   └── estoque_inclusoes.csv    ← saldos a publicar no painel
+├── scripts/
+│   ├── carregar_catalogo.py
+│   └── carregar_estoque.py
+├── sql/
+│   └── 001_catalogo_estoque_campo.sql
+├── CARREGAR_CATALOGO.bat
+├── CARREGAR_ESTOQUE.bat
+├── RODAR_APP.bat                ← painel Streamlit (opcional)
+├── INSTALAR_APP.bat
+└── LEIA-ME.txt                  ← este arquivo
+
+
+PASSO A PASSO — PRIMEIRA VEZ (INSTALAÇÃO)
+-----------------------------------------
+1. Execute INSTALAR_APP.bat (cria venv e instala dependências).
+
+2. Copie o arquivo de credenciais:
+     .streamlit\secrets.toml.example  →  .streamlit\secrets.toml
+
+3. Abra .streamlit\secrets.toml e preencha:
+     SUPABASE_URL = "https://azhpxhrwhegfysoeqmft.supabase.co"
+     SUPABASE_KEY = (chave anon ou service_role do projeto)
+
+4. Teste a conexão:
+     CARREGAR_CATALOGO.bat --dry-run
+   (adicione --dry-run ao final do comando python manualmente se quiser simular)
+
+
+PASSO A PASSO — INCLUIR NOVO ITEM NO CATÁLOGO
+---------------------------------------------
+Exemplo: material 9999 — PRODUTO EXEMPLO 20 L
+
+A) Pelo CSV (recomendado para lote)
+
+   1. Abra dados\catalogo_inclusoes.csv no Excel ou Bloco de Notas.
+      Separador: ponto e vírgula (;)
+
+   2. Adicione uma linha (ou edite a existente):
+
+      codigo_sap;descricao_sap;descricao_resumida;unidade_estoque;categoria;deposito_sap;ativo;fonte_arquivo;observacao
+      9999;PRODUTO EXEMPLO 20 L;Produto Exemplo 20 L;LT;Defensivos;FSV-MAN;true;catalogo_inclusoes.csv;NF-e xxx
+
+   3. Se o item já teve entrada física, atualize também dados\estoque_inclusoes.csv:
+
+      codigo_sap;em_estoque;unidade;valor_unitario
+      9999;150;LT;
+
+   4. Execute na ordem:
+        CARREGAR_CATALOGO.bat
+        CARREGAR_ESTOQUE.bat
+
+   5. Abra https://estoque-verde-ouro.lovable.app/ e pressione F5.
+      O item deve aparecer em "Itens em estoque".
+
+B) Pelo painel Streamlit (item avulso)
+
+   1. RODAR_APP.bat
+   2. Aba "Catálogo" → preencha código, descrição, unidade → Gravar
+   3. Aba "Estoque" → informe quantidade → Gravar
+   4. Atualize o painel Lovable (F5)
+
+C) Pelo SQL Editor do Supabase (alternativa)
+
+   1. Acesse Supabase → SQL Editor → projeto azhpxhrwhegfysoeqmft
+   2. Use os exemplos em sql\001_catalogo_estoque_campo.sql
+   3. Substitua código, descrição e quantidade
+
+
+PASSO A PASSO — APÓS ENTRADA DE MERCADORIA (NF-e / SIGALMOX)
+------------------------------------------------------------
+Quando registrar entrada no SIGALMOX (Streamlit ou PWA) e o item
+NÃO aparecer no painel Lovable, normalmente falta o catálogo:
+
+  1. Confirme se o código SAP existe em dim_catalogo_sap_campo.
+  2. Se não existir → inclua pelo CSV ou Streamlit (passos acima).
+  3. Atualize estoque_sap_campo com o saldo total atual (não só a NF).
+  4. Execute CARREGAR_ESTOQUE.bat ou grave pela aba Estoque.
+  5. Valide no dashboard e na aba Integridade.
+
+
+COLUNAS DO CSV DE CATÁLOGO
+--------------------------
+  codigo_sap         Código SAP com 5 dígitos (ex.: 02333, 02023)
+                     Se digitar 2333, o script converte automaticamente para 02333
+  descricao_sap      Texto completo como no SAP
+  descricao_resumida Nome curto no painel
+  unidade_estoque    KG, LT, UN, SC, GL
+  categoria          Defensivos, Medicamentos, Filtros...
+  deposito_sap       FSV-MAN (padrão almoxarifado)
+  ativo              true / false
+  fonte_arquivo      Nome do arquivo ou origem
+  observacao         Livre (NF, data, responsável)
+
+
+COLUNAS DO CSV DE ESTOQUE
+-------------------------
+  codigo_sap      Mesmo código do catálogo
+  em_estoque      Quantidade total atual
+  unidade         KG, LT, UN...
+  valor_unitario  (opcional)
+
+
+DÚVIDAS FREQUENTES
+------------------
+P: Importação ignorou item "sem cadastro no catálogo"?
+R: Verifique se o código está com zero à esquerda (02333, não 2333).
+   Use CARREGAR_CATALOGO.bat — o script normaliza códigos numéricos para 5 dígitos.
+
+P: Item aparece no SIGALMOX mas não no painel Lovable?
+R: Inclua em dim_catalogo_sap_campo + estoque_sap_campo (este módulo).
+
+P: Posso usar Excel em vez de CSV?
+R: Salve como CSV UTF-8 com separador ; ou adapte carregar_catalogo.py.
+
+P: O saldo no painel difere do SAP?
+R: Atualize estoque_inclusoes.csv e execute CARREGAR_ESTOQUE.bat
+   após conciliar no almoxarifado.
+
+
+Suporte interno: equipe SIGCF / Almoxarifado Central
+
+
+FLUXO DIÁRIO DE BAIXAS (resumo)
+-------------------------------
+Ver arquivo completo: FLUXO_DIARIO_BAIXAS.txt
+
+  1. Baixa SAP → Excel em C:\Users\hmauricio\Desktop\BAIXAS_SAP
+  2. WhatsApp → lançar no Streamlit
+  3. CONCILIAR_BAIXA_SAP.bat
+  4. CARREGAR_ESTOQUE.bat
+  5. CARREGAR_CATALOGO.bat  →  SÓ se passo 3 mostrar "Ignorados (sem cadastro no catalogo)"
+
+Na rotina diária de baixas NÃO é necessário rodar CARREGAR_CATALOGO.
+Use CARREGAR_CATALOGO apenas para material NOVO ainda não cadastrado no painel.

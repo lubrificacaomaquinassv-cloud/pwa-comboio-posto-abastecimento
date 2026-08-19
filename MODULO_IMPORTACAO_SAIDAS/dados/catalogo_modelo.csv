@@ -1,0 +1,2 @@
+codigo_sap;descricao_sap;descricao_resumida;unidade_estoque;categoria;deposito_sap;ativo;fonte_arquivo;observacao
+CODIGO;DESCRICAO COMPLETA SAP;Nome curto painel;KG;Defensivos;FSV-MAN;true;catalogo_inclusoes.csv;Observacao opcional
