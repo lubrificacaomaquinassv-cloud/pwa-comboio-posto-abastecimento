@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1440" viewBox="0 0 2560 1440" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e2b26"/>
+      <stop offset="100%" stop-color="#141c19"/>
+    </linearGradient>
+    <radialGradient id="glowGreen" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(280 120) rotate(90) scale(620)">
+      <stop offset="0%" stop-color="#5cb86a" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#5cb86a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowBlue" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(2280 1320) rotate(90) scale(700)">
+      <stop offset="0%" stop-color="#0d4f8b" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#0d4f8b" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="80" height="80" patternUnits="userSpaceOnUse">
+      <path d="M80 0H0V80" stroke="#ffffff" stroke-opacity="0.035" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="2560" height="1440" fill="url(#bg)"/>
+  <rect width="2560" height="1440" fill="url(#glowGreen)"/>
+  <rect width="2560" height="1440" fill="url(#glowBlue)"/>
+  <rect width="2560" height="1440" fill="url(#grid)"/>
+  <path d="M0 260C320 220 640 300 960 250C1280 200 1600 280 1920 230C2240 180 2400 240 2560 210V1440H0V260Z" fill="#78b889" fill-opacity="0.035"/>
+  <path d="M0 520C360 470 720 560 1080 500C1440 440 1800 540 2160 480C2360 450 2480 500 2560 470V1440H0V520Z" fill="#78b889" fill-opacity="0.03"/>
+  <path d="M0 780C400 730 800 820 1200 760C1600 700 2000 810 2560 740V1440H0V780Z" fill="#78b889" fill-opacity="0.025"/>
+  <rect width="2560" height="1440" fill="#000000" fill-opacity="0.12"/>
+</svg>
