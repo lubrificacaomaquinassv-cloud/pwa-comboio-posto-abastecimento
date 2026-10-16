@@ -2,6 +2,13 @@
 cd /d "%~dp0"
 title Orcamento Domestico - Streamlit (porta 8502)
 
+if not exist ".streamlit\config.toml" (
+  if exist "streamlit_config.toml" (
+    if not exist ".streamlit" mkdir ".streamlit"
+    copy /Y "streamlit_config.toml" ".streamlit\config.toml" >nul
+  )
+)
+
 echo Fazendo backup automatico dos dados (so o arquivo orcamento.db)...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0backup_auto.ps1"
 

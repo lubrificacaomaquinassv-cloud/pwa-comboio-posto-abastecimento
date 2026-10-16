@@ -1,0 +1,18 @@
+# Copie este arquivo para:  .streamlit/config.toml
+# (No GitHub a pasta com ponto no nome e chata de criar; use o RODAR_APP.bat que cria sozinho.)
+
+[server]
+port = 8502
+headless = true
+
+[browser]
+serverPort = 8502
+gatherUsageStats = false
+
+[theme]
+base = "dark"
+primaryColor = "#6ee7b7"
+backgroundColor = "#0c0f14"
+secondaryBackgroundColor = "#151b26"
+textColor = "#e8eef7"
+font = "sans serif"
