@@ -1,0 +1,21 @@
+================================================================================
+  ORÇAMENTO DOMÉSTICO — O QUE LEVAR PARA CASA (PENDRIVE)
+================================================================================
+
+ESTA PASTA NÃO É PREENCHIDA PELO GIT.
+Na sua máquina do trabalho, ANTES de copiar pro pendrive:
+
+  1) Abra a pasta onde está o app (ex.: D:\orcamento-casa)
+  2) Dê DOIS CLIQUES em:  PREPARAR_PEN_DRIVE.bat
+  3) Ele cria/atualiza esta pasta "LEVAR_PARA_CASA" com tudo leve (sem .venv)
+  4) Copie SÓ a pasta LEVAR_PARA_CASA inteira para o pendrive
+
+Em casa:
+
+  1) Cole a pasta no PC (ex.: D:\orcamento-casa)
+  2) Dê dois cliques em RODAR_APP.bat
+  3) Abra http://localhost:8502
+
+Seus lançamentos ficam em:  data\orcamento.db  (dentro desta pasta)
+
+================================================================================

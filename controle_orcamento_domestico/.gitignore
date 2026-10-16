@@ -1,5 +1,7 @@
 data/
 backups/
+LEVAR_PARA_CASA/*
+!LEVAR_PARA_CASA/LEIA-ME.txt
 __pycache__/
 *.pyc
 .streamlit/secrets.toml

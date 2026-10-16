@@ -1,0 +1,30 @@
+================================================================================
+  PASSO A PASSO — LEVAR O ORÇAMENTO PARA CASA
+================================================================================
+
+ONDE ESTÁ CADA COISA (pasta do app, ex. D:\orcamento-casa):
+
+  RODAR_APP.bat              -> Abre o painel no navegador (uso diario)
+  PREPARAR_PEN_DRIVE.bat     -> USE ESTE antes de ir embora (monta o pacote)
+  LEVAR_PARA_CASA\           -> Pasta LEVE para copiar no pendrive (poucos MB)
+  backup_auto.ps1            -> Backup automatico (nao precisa abrir)
+  BACKUP_DADOS.bat           -> Backup manual (opcional)
+  data\orcamento.db          -> SEUS DADOS (criado quando voce lanca no app)
+
+================================================================================
+  O QUE FAZER AGORA (3 passos)
+================================================================================
+
+  PASSO 1 — No PC de agora:
+            Duplo clique em  PREPARAR_PEN_DRIVE.bat
+            (abre a pasta LEVAR_PARA_CASA pronta)
+
+  PASSO 2 — Copie a pasta  LEVAR_PARA_CASA  inteira para o pendrive
+            (cabem poucos megabytes; NAO copie .venv)
+
+  PASSO 3 — Em casa:
+            Cole LEVAR_PARA_CASA em D:\ (renomeie para orcamento-casa se quiser)
+            Duplo clique em RODAR_APP.bat
+            Navegador: http://localhost:8502
+
+================================================================================
