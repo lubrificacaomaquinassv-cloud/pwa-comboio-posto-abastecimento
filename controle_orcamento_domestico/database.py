@@ -34,10 +34,16 @@ CATEGORIAS_VARIAVEIS = [
     "Outros (variável)",
 ]
 
+_db_initialized = False
+
 
 def init_db() -> None:
+    global _db_initialized
+    if _db_initialized:
+        return
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with get_conn() as conn:
+    conn = sqlite3.connect(DB_PATH)
+    try:
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS configuracao (
@@ -76,6 +82,10 @@ def init_db() -> None:
             """
         )
         _migrate_columns(conn)
+        conn.commit()
+    finally:
+        conn.close()
+    _db_initialized = True
 
 
 def _migrate_columns(conn: sqlite3.Connection) -> None:
