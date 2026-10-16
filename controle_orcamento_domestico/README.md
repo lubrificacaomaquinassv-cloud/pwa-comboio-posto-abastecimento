@@ -70,3 +70,17 @@ git push -u origin main
 ```
 
 Não commite `data/orcamento.db` (já está no `.gitignore`).
+
+## Backup no pendrive (sem encher o drive)
+
+**Não copie a pasta inteira** — a subpasta `.venv` tem centenas de MB.
+
+Copie **só**:
+
+```
+data\orcamento.db
+```
+
+Ou dê dois cliques em **`BACKUP_DADOS.bat`** (grava em `E:\backup-orcamento` por padrão; ou arraste o `.bat` e passe a letra do pendrive).
+
+Para **restaurar** em outro PC ou depois de reinstalar: coloque `orcamento.db` de volta em `data\` dentro de `orcamento-casa` e rode `RODAR_APP.bat`.
