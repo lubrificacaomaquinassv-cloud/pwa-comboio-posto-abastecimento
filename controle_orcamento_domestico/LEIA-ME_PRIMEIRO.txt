@@ -1,30 +1,53 @@
 ================================================================================
-  PASSO A PASSO — LEVAR O ORÇAMENTO PARA CASA
+  ORCAMENTO DOMESTICO — LEIA ISTO (2 MINUTOS)
 ================================================================================
 
-ONDE ESTÁ CADA COISA (pasta do app, ex. D:\orcamento-casa):
+COMO ABRIR O PAINEL
+-------------------
+  Duplo clique em:  RODAR_APP.bat
 
-  RODAR_APP.bat              -> Abre o painel no navegador (uso diario)
-  PREPARAR_PEN_DRIVE.bat     -> USE ESTE antes de ir embora (monta o pacote)
-  LEVAR_PARA_CASA\           -> Pasta LEVE para copiar no pendrive (poucos MB)
-  backup_auto.ps1            -> Backup automatico (nao precisa abrir)
-  BACKUP_DADOS.bat           -> Backup manual (opcional)
-  data\orcamento.db          -> SEUS DADOS (criado quando voce lanca no app)
+  PRIMEIRA VEZ: a janela preta fica em "Criando ambiente virtual" ou
+  "Instalando Streamlit" por VARIOS MINUTOS. ISSO E NORMAL.
+  NAO FECHE. Espere aparecer a linha:
 
-================================================================================
-  O QUE FAZER AGORA (3 passos)
-================================================================================
+    Local URL: http://localhost:8502
 
-  PASSO 1 — No PC de agora:
-            Duplo clique em  PREPARAR_PEN_DRIVE.bat
-            (abre a pasta LEVAR_PARA_CASA pronta)
+  Depois abra no navegador (se nao abrir sozinho):
+    http://localhost:8502
 
-  PASSO 2 — Copie a pasta  LEVAR_PARA_CASA  inteira para o pendrive
-            (cabem poucos megabytes; NAO copie .venv)
+  Titulo certo: "Controle orcamentario domestico"
+  (Se aparecer Importacao SAP, voce abriu a porta 8501 — use 8502)
 
-  PASSO 3 — Em casa:
-            Cole LEVAR_PARA_CASA em D:\ (renomeie para orcamento-casa se quiser)
-            Duplo clique em RODAR_APP.bat
-            Navegador: http://localhost:8502
+
+PASTA NO PC (exemplo)
+---------------------
+  D:\orcamento_casa
+
+  OBRIGATORIO ter estes arquivos juntos:
+    app.py
+    database.py
+    fatura.py
+    requirements.txt
+    RODAR_APP.bat
+    pasta data\  (seus lancamentos: orcamento.db)
+
+  NAO precisa copiar .venv para pendrive (e enorme).
+
+
+LEVAR PARA CASA NO PENDRIVE
+---------------------------
+  Copie a pasta INTEIRA orcamento_casa EXCETO .venv se existir.
+  Ou use PREPARAR_PEN_DRIVE.bat (se tiver no PC).
+
+
+PROBLEMAS
+---------
+  Travou mais de 15 min em "Criando ambiente virtual"?
+    - Instale Python: https://www.python.org/downloads/
+    - Marque "Add python.exe to PATH"
+    - Apague a pasta .venv e rode RODAR_APP.bat de novo
+
+  Erro "database" ou "fatura" nao encontrado?
+    - Faltam arquivos — baixe database.py e fatura.py do GitHub
 
 ================================================================================
