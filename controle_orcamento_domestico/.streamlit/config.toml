@@ -5,3 +5,11 @@ headless = true
 [browser]
 serverPort = 8502
 gatherUsageStats = false
+
+[theme]
+base = "dark"
+primaryColor = "#6ee7b7"
+backgroundColor = "#0c0f14"
+secondaryBackgroundColor = "#151b26"
+textColor = "#e8eef7"
+font = "sans serif"

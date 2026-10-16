@@ -20,6 +20,73 @@ from fatura import (
 st.set_page_config(page_title="Orçamento Doméstico", page_icon="🏠", layout="wide")
 
 
+def aplicar_tema() -> None:
+    st.markdown(
+        """
+        <style>
+        .stApp {
+            background: linear-gradient(165deg, #0c0f14 0%, #121820 45%, #0f1318 100%);
+            color: #e8eef7;
+        }
+        [data-testid="stSidebar"] {
+            background-color: #0a0d12;
+            border-right: 1px solid #2a3548;
+        }
+        [data-testid="stSidebar"] * {
+            color: #dce4f0 !important;
+        }
+        h1, h2, h3, label, p, span, .stMarkdown {
+            color: #e8eef7;
+        }
+        div[data-testid="stMetric"] {
+            background: #151b26;
+            border: 1px solid #2a3548;
+            border-radius: 10px;
+            padding: 12px 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+        }
+        div[data-testid="stMetric"] label {
+            color: #9fb0c8 !important;
+        }
+        div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+            color: #f0f6ff !important;
+        }
+        div[data-testid="stMetric"] [data-testid="stMetricDelta"] {
+            color: #6ee7b7 !important;
+        }
+        .stAlert {
+            background-color: #151b26;
+            border: 1px solid #2a3548;
+            color: #e8eef7;
+        }
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="input"] > div,
+        .stTextInput input, .stNumberInput input, .stDateInput input {
+            background-color: #1a2230 !important;
+            color: #f0f6ff !important;
+            border-color: #3d4f6a !important;
+        }
+        .stButton > button[kind="primary"] {
+            background: linear-gradient(90deg, #059669, #10b981);
+            color: #041008;
+            border: none;
+            font-weight: 600;
+        }
+        .stButton > button[kind="secondary"] {
+            background: #1a2230;
+            color: #e8eef7;
+            border: 1px solid #3d4f6a;
+        }
+        [data-testid="stDataFrame"] {
+            border: 1px solid #2a3548;
+            border-radius: 8px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def brl(v: float) -> str:
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
@@ -414,6 +481,7 @@ def pagina_config() -> None:
 
 
 def main() -> None:
+    aplicar_tema()
     st.title("Controle orçamentário doméstico")
     banner_ciclo()
     pagina = st.sidebar.radio("Menu", ["Painel", "Lançamentos", "Configuração"])
