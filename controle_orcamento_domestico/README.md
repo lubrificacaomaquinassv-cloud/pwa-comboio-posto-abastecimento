@@ -9,12 +9,46 @@ Painel **Streamlit** + **SQLite** (arquivo local `data/orcamento.db`). Sem Supab
 - Compras após o fechamento entram na fatura seguinte.
 - Opção **Próximo ciclo** no lançamento força a despesa para a fatura posterior.
 
-## Executar
+## Baixar no seu PC (Windows)
+
+O projeto **não** fica em `C:\Users\hmauricio` sozinho — você precisa clonar do GitHub **uma vez**:
+
+```powershell
+cd $HOME
+git clone -b cursor/controle-orcamento-domestico-93ab https://github.com/lubrificacaomaquinassv-cloud/pwa-comboio-posto-abastecimento.git orcamento-casa
+cd orcamento-casa\controle_orcamento_domestico
+```
+
+Depois, **sempre** entre nesta pasta antes de rodar comandos:
+
+`C:\Users\hmauricio\orcamento-casa\controle_orcamento_domestico`
+
+**Forma mais fácil:** dê dois cliques em `RODAR_APP.bat` (cria `.venv`, instala dependências e abre o painel).
+
+**Manual:**
+
+```powershell
+cd $HOME\orcamento-casa\controle_orcamento_domestico
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+Se o PowerShell bloquear o script de activate, use o `.bat` acima ou:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+Quando o PR for mergeado na `main`, pode clonar só a branch `main` e usar a mesma subpasta `controle_orcamento_domestico`.
+
+## Executar (Linux / Mac)
 
 ```bash
 cd controle_orcamento_domestico
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 streamlit run app.py
 ```
