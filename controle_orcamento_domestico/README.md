@@ -25,6 +25,9 @@ Depois, **sempre** entre nesta pasta antes de rodar comandos:
 
 **Forma mais fácil:** dê dois cliques em `RODAR_APP.bat` (cria `.venv`, instala dependências e abre o painel).
 
+**Porta 8502** — evita conflito com o módulo *Importação de Saídas* (SAP), que costuma usar **8501**.  
+Se abrir a tela errada, feche abas antigas de `localhost:8501` e use **http://localhost:8502** (título: *Orçamento Doméstico*).
+
 **Manual:**
 
 ```powershell
