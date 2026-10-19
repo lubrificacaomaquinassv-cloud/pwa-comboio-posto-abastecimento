@@ -40,7 +40,7 @@ from db.supabase_rest import (
     get_supabase_client,
 )
 
-PAINEL_BUILD = "2026.10.20-api-anon"
+PAINEL_BUILD = "2026.10.20-api-rpc"
 
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
@@ -128,7 +128,7 @@ if _engine is None and _sb_client is None:
     st.error("Supabase não configurado nos **Secrets**.")
     st.markdown(
         "**Igual aos outros painéis** (URL + chave — **não** precisa senha Postgres):\n\n"
-        "1. Rode no Supabase o SQL `sql/004_view_dim_talhoes_geojson.sql` (uma vez).\n"
+        "1. Rode no Supabase o SQL `sql/005_api_mapa_talhoes.sql` (uma vez).\n"
         "2. Cole os Secrets abaixo e **Save** → **Reboot app**."
     )
     st.code(
@@ -218,7 +218,9 @@ if _usa_supabase:
         if _modo_api:
             df_cobertura = carregar_cobertura_rest(_sb_client)
             df_base = carregar_base_rest(_sb_client)
-            gdf_db, _fonte_gis = carregar_talhoes_geom_rest(_sb_client)
+            gdf_db, _fonte_gis, _gis_erro_api = carregar_talhoes_geom_rest(_sb_client)
+            if gdf_db is None and _gis_erro_api:
+                st.session_state["_gis_erro_api"] = _gis_erro_api
         else:
             df_cobertura = carregar_cobertura(_engine)
             df_base = carregar_base(_engine)
@@ -245,15 +247,25 @@ if _usa_supabase:
             "ficha do talhão e KPIs de adubação aparecem após a carga das planilhas."
         )
     if gdf_talhoes is None:
-        st.error("Nenhuma geometria encontrada no Supabase.")
-        st.markdown(
-            """
-Verifique no **Table Editor** se existe **`public.dim_talhoes`** com coluna de geometria (PostGIS)
-ou a tabela **`dim_talhao_florestal`**. O painel lê automaticamente o GIS do Apontamento de Campo.
+        st.error("Mapa GIS ainda não liberado via API.")
+        if _modo_api:
+            st.markdown(
+                """
+**Faça isto no Supabase (SQL Editor), uma vez:**
 
-Grave o GIS no Supabase (Apontamento) ou use o modo planilhas no expander acima.
-            """
-        )
+1. Abra o arquivo **`sql/005_api_mapa_talhoes.sql`** (branch `painel-adubacao` no GitHub)  
+2. Cole tudo → **Run**
+
+Se ainda falhar, nos **Secrets** use a chave **`service_role`** (Settings → API) em  
+`SUPABASE_KEY` (só no Streamlit, nunca no site público).
+
+Depois: **Reboot app**.
+                """
+            )
+            if st.session_state.get("_gis_erro_api"):
+                st.caption(f"Detalhe técnico: {st.session_state['_gis_erro_api']}")
+        else:
+            st.markdown("Verifique **`dim_talhoes`** com geometria PostGIS ou rode `005_api_mapa_talhoes.sql`.")
         st.stop()
 
 if not _usa_supabase:
