@@ -150,14 +150,27 @@ def _montar_cores(gdf: pd.DataFrame, pintar: PintarPor) -> pd.Series:
     return _cor_escala(gdf["kg_total_map"], paleta)
 
 
-@st.cache_resource(show_spinner="Montando camadas do mapa…")
+def _estilo_poligono(feat: dict) -> dict:
+    return {
+        "fillColor": feat["properties"].get("cor", COR_SEM_DADO),
+        "color": "#1a1a1a",
+        "weight": 1,
+        "fillOpacity": 0.72,
+    }
+
+
+def _destaque_poligono(_feat: dict) -> dict:
+    return {"weight": 3, "color": "#4caf50", "fillOpacity": 0.85}
+
+
 def _folium_mapa(
-    geojson_str: str,
+    geojson_data: dict,
     centro_lat: float,
     centro_lon: float,
     camada: Camada,
-    rotulos_json: str | None,
+    rotulos: list[tuple[float, float, str]] | None,
 ):
+    """Sem cache: st_folium não serializa mapa com lambdas em GeoJson."""
     tiles = TILES_TERRENO if camada == "Terreno" else TILES_SATELITE
     mapa = folium.Map(
         location=[centro_lat, centro_lon],
@@ -168,30 +181,25 @@ def _folium_mapa(
     )
 
     folium.GeoJson(
-        geojson_str,
-        style_function=lambda feat: {
-            "fillColor": feat["properties"].get("cor", COR_SEM_DADO),
-            "color": "#1a1a1a",
-            "weight": 1,
-            "fillOpacity": 0.72,
-        },
-        highlight_function=lambda x: {"weight": 3, "color": "#4caf50", "fillOpacity": 0.85},
+        geojson_data,
+        style_function=_estilo_poligono,
+        highlight_function=_destaque_poligono,
         tooltip=folium.GeoJsonTooltip(fields=["talhao"], aliases=["Talhão:"]),
     ).add_to(mapa)
 
-    if rotulos_json:
-        folium.GeoJson(
-            rotulos_json,
-            name="Rótulos",
-            point_to_layer=lambda feat, latlng: folium.Marker(
-                latlng,
+    if rotulos:
+        for lat, lon, cod in rotulos:
+            folium.Marker(
+                location=[lat, lon],
                 icon=folium.DivIcon(
                     icon_size=(40, 14),
                     icon_anchor=(20, 7),
-                    html=f'<div style="font-size:10px;font-weight:700;color:#fff;text-shadow:1px 1px 2px #000;">{feat["properties"]["talhao"]}</div>',
+                    html=(
+                        f'<div style="font-size:10px;font-weight:700;color:#fff;'
+                        f'text-shadow:1px 1px 2px #000;">{html.escape(cod)}</div>'
+                    ),
                 ),
-            ),
-        ).add_to(mapa)
+            ).add_to(mapa)
 
     return mapa
 
@@ -246,17 +254,16 @@ def render_mapa_adubacao(
     centro_lon = float(gdf.geometry.centroid.x.mean())
 
     props_cols = ["talhao", "cor"]
-    geojson_str = json.dumps(gdf[props_cols + ["geometry"]].__geo_interface__)
+    geojson_data = gdf[props_cols + ["geometry"]].__geo_interface__
 
-    rotulos_json = None
+    rotulos_pts = None
     if rotulos:
-        pts = []
+        rotulos_pts = []
         for _, row in gdf.iterrows():
             c = row.geometry.centroid
-            pts.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": [c.x, c.y]}, "properties": {"talhao": str(row["talhao"])}})
-        rotulos_json = json.dumps({"type": "FeatureCollection", "features": pts})
+            rotulos_pts.append((float(c.y), float(c.x), str(row["talhao"])))
 
-    mapa = _folium_mapa(geojson_str, centro_lat, centro_lon, camada, rotulos_json)
+    mapa = _folium_mapa(geojson_data, centro_lat, centro_lon, camada, rotulos_pts)
 
     with col_map:
         out = st_folium(
