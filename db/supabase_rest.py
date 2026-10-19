@@ -32,24 +32,11 @@ def _records(response: Any) -> list[dict]:
     if response is None:
         return []
     data = getattr(response, "data", None)
-    return data if isinstance(data, list) else []
-
-
-def carregar_talhoes_geom_rest(client) -> tuple[gpd.GeoDataFrame | None, str | None]:
-    for fonte, tabela in (
-        ("API vw_dim_talhoes_geojson", "vw_dim_talhoes_geojson"),
-        ("API dim_talhoes (sem geo)", "dim_talhoes"),
-    ):
-        try:
-            resp = client.table(tabela).select("*").limit(8000).execute()
-            rows = _records(resp)
-            if not rows:
-                continue
-            if tabela == "vw_dim_talhoes_geojson" and "geojson" in rows[0]:
-                return _gdf_from_geojson_rows(rows), fonte
-        except Exception:
-            continue
-    return None, None
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return [data]
+    return []
 
 
 def _gdf_from_geojson_rows(rows: list[dict]) -> gpd.GeoDataFrame:
@@ -72,6 +59,45 @@ def _gdf_from_geojson_rows(rows: list[dict]) -> gpd.GeoDataFrame:
         )
     gdf = gpd.GeoDataFrame(registros, geometry="geometry", crs="EPSG:4326")
     return gdf[gdf["talhao"].notna() & (gdf["talhao"] != "")].copy()
+
+
+def carregar_talhoes_geom_rest(client) -> tuple[gpd.GeoDataFrame | None, str | None, str | None]:
+    """
+    Retorna (gdf, fonte, erro).
+    erro = mensagem se vazio (view não criada, RLS, etc.)
+    """
+    ultimo_erro: str | None = None
+
+    # 1) RPC (melhor com RLS)
+    try:
+        resp = client.rpc("api_talhoes_geojson", {}).execute()
+        payload = resp.data
+        if isinstance(payload, list) and payload:
+            gdf = _gdf_from_geojson_rows(payload)
+            if len(gdf):
+                return gdf, "API rpc api_talhoes_geojson", None
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        if isinstance(payload, list) and payload:
+            gdf = _gdf_from_geojson_rows(payload)
+            if len(gdf):
+                return gdf, "API rpc api_talhoes_geojson", None
+    except Exception as exc:
+        ultimo_erro = f"RPC api_talhoes_geojson: {exc}"
+
+    # 2) View
+    try:
+        resp = client.table("vw_dim_talhoes_geojson").select("*").limit(8000).execute()
+        rows = _records(resp)
+        if rows:
+            gdf = _gdf_from_geojson_rows(rows)
+            if len(gdf):
+                return gdf, "API vw_dim_talhoes_geojson", None
+        ultimo_erro = "View vw_dim_talhoes_geojson retornou 0 linhas."
+    except Exception as exc:
+        ultimo_erro = f"View vw_dim_talhoes_geojson: {exc}"
+
+    return None, None, ultimo_erro or "Geometria não disponível via API."
 
 
 def carregar_cobertura_rest(client) -> pd.DataFrame:
