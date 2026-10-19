@@ -40,7 +40,7 @@ from db.supabase_rest import (
     get_supabase_client,
 )
 
-PAINEL_BUILD = "2026.10.20-api-rpc"
+PAINEL_BUILD = "2026.10.20-kml-repo"
 
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
@@ -230,7 +230,8 @@ if _usa_supabase:
             st.sidebar.success(f"🗺️ GIS: **{_fonte_gis}** ({len(gdf_db)} polígonos)")
         elif _bytes_kml():
             gdf_talhoes = _carregar_kml(_bytes_kml())
-            _fonte_gis = "KML (fallback)"
+            _fonte_gis = "KML em dados/ (repositório)"
+            st.sidebar.info("Mapa via **KML no GitHub** (cadastro dim_talhoes não tem polígono).")
         if not df_cobertura.empty:
             df_cobertura = aplicar_calculadora_no_df(
                 df_cobertura, "fertilizante", "kg_total", "area_total_ha"
@@ -247,21 +248,23 @@ if _usa_supabase:
             "ficha do talhão e KPIs de adubação aparecem após a carga das planilhas."
         )
     if gdf_talhoes is None:
-        st.error("Mapa GIS: falta gravar os polígonos no Supabase.")
-        if _modo_api:
-            st.markdown(
-                """
-**`dim_talhoes` não tem polígono** (só código/área do Apontamento). Ordem:
+        st.error("Mapa: falta o KML no repositório ou polígonos no Supabase.")
+        st.markdown(
+            """
+**O cadastro de 2 meses (`dim_talhoes`) não guarda polígono** — só código/área (Apontamento).
 
-1. Supabase SQL → **`sql/003_schema_adubacao_florestal.sql`**
-2. No PC (1×) → **`scripts/CARGA_DADOS_PAINEL.ps1`** com o KML da fazenda
-3. Supabase SQL → **`sql/005_api_mapa_talhoes.sql`** → **Reboot app** Streamlit
-                """
-            )
-            if st.session_state.get("_gis_erro_api"):
-                st.caption(f"Detalhe técnico: {st.session_state['_gis_erro_api']}")
-        else:
-            st.markdown("Verifique **`dim_talhoes`** com geometria PostGIS ou rode `005_api_mapa_talhoes.sql`.")
+**Caminho simples (igual ao mapa que você já rodou em Python):**
+
+1. Copie o KML para **`dados/fazenda_santa_virginia_completo.kml`** no projeto  
+   (duplo clique em **`COPIAR_KML_PARA_PAINEL.bat`**)
+2. `git add` → `commit` → `push`
+3. Streamlit → **Reboot app** (branch **`painel-adubacao`**)
+
+Opcional (só Lovable/API com GeoJSON no banco): carga Postgres + SQL `005`.
+            """
+        )
+        if st.session_state.get("_gis_erro_api"):
+            st.caption(f"API mapa: {st.session_state['_gis_erro_api']}")
         st.stop()
 
 if not _usa_supabase:
