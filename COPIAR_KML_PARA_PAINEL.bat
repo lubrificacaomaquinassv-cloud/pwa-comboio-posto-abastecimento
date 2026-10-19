@@ -15,9 +15,9 @@ echo.
 echo Proximo NO POWERSHELL ^(uma linha por vez^):
 echo   cd %~dp0
 echo   git add dados\fazenda_santa_virginia_completo.kml
-echo   git commit -m "KML mapa no repo"
+echo   git commit -m "KML do mapa no repositorio"
 echo   git push
 echo.
-echo Depois: Streamlit - Reboot app ^(branch painel-adubacao^)
-echo NAO precisa senha Postgres para o mapa.
+echo Depois: Streamlit - Reiniciar app ^(branch painel-adubacao^)
+echo Nao precisa senha do Postgres para o mapa.
 pause

@@ -230,8 +230,8 @@ if _usa_supabase:
             st.sidebar.success(f"🗺️ GIS: **{_fonte_gis}** ({len(gdf_db)} polígonos)")
         elif _bytes_kml():
             gdf_talhoes = _carregar_kml(_bytes_kml())
-            _fonte_gis = "KML em dados/ (repo)"
-            st.sidebar.info("Mapa via **KML no GitHub** (cadastro dim_talhoes nao tem poligono).")
+            _fonte_gis = "KML em dados/ (repositório)"
+            st.sidebar.info("Mapa via **KML no GitHub** (cadastro dim_talhoes não tem polígono).")
         if not df_cobertura.empty:
             df_cobertura = aplicar_calculadora_no_df(
                 df_cobertura, "fertilizante", "kg_total", "area_total_ha"
