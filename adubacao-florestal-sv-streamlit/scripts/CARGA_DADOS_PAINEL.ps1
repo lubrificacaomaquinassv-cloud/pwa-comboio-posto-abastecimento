@@ -73,17 +73,8 @@ Write-Host ""
 Write-Host "Instalando dependencias (se necessario)..." -ForegroundColor DarkGray
 & $py -m pip install -q -r requirements.txt
 
-$argsSync = @(
-    "scripts/sync_excel_to_supabase.py",
-    "--kml", $kml.FullName,
-    "--cobertura", $cobertura.FullName
-)
-if ($base) {
-    $argsSync += @("--base", $base.FullName)
-}
-
-Write-Host "Executando sync..." -ForegroundColor Green
-& $py @argsSync
+Write-Host "Executando sync (--dados-dir)..." -ForegroundColor Green
+& $py scripts/sync_excel_to_supabase.py --dados-dir $PastaDados
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host ""

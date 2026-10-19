@@ -22,6 +22,7 @@ from ingestion.excel_parser import ler_adubacao_cobertura, ler_adubacao_base
 from ingestion.pdf_retiro_parser import ler_pasta_pdfs_retiro
 from npk_calculator import aplicar_calculadora_no_df, calcular_npk_aplicado, dose_por_ha
 from painel_terceiros import carregar_terceiros, render_aba_terceiros
+from db.carga_supabase import sync_pasta_dados_painel
 from db.supabase_io import (
     carregar_base,
     carregar_cobertura,
@@ -32,9 +33,10 @@ from db.supabase_io import (
     gravar_talhoes,
     ultimo_cobertura_por_talhao,
 )
+from ingestion.dados_painel import descobrir_arquivos_dados_painel
 from mapa_adubacao import render_mapa_adubacao
 
-PAINEL_BUILD = "2026.10.19-ficha-clique-talhao"
+PAINEL_BUILD = "2026.10.19-supabase-sync-pipeline"
 
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
@@ -119,17 +121,26 @@ if _usa_supabase and _engine is None:
     )
     st.stop()
 
-arq_kml = st.sidebar.file_uploader("Mapa da fazenda (KML)", type=["kml"])
+_dados_dir = os.path.join(os.path.dirname(__file__), "dados")
+_kml_default = os.path.join(_dados_dir, "fazenda_santa_virginia_completo.kml")
+_tem_dados_servidor = os.path.isdir(_dados_dir) and any(
+    f.endswith((".xlsx", ".kml")) for f in os.listdir(_dados_dir)
+)
+
+arq_kml = None
 arq_cobertura = None
 arq_base = None
-if not _usa_supabase:
+if _usa_supabase:
+    st.sidebar.caption(
+        "**Produção:** lançamentos e mapa vêm do **Supabase** (sem upload a cada login). "
+        "Atualize os dados com `CARGA_DADOS_PAINEL.ps1`, GitHub Actions ou aba **Supabase**."
+    )
+    if _tem_dados_servidor:
+        st.sidebar.info("Pasta `dados/` no servidor com planilhas/KML (sync → Supabase na aba ☁️).")
+else:
+    arq_kml = st.sidebar.file_uploader("Mapa da fazenda (KML)", type=["kml"])
     arq_cobertura = st.sidebar.file_uploader("Adubação de Cobertura (xlsx)", type=["xlsx"])
     arq_base = st.sidebar.file_uploader("Adubação de Base / Subsolagem (xlsx)", type=["xlsx"])
-else:
-    st.sidebar.caption(
-        "Cobertura e base vêm do Supabase. O **mapa GIS** usa `public.dim_talhoes` "
-        "(Apontamento) ou `dim_talhao_florestal` — **KML não é obrigatório** se já houver polígonos no banco."
-    )
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Operações Terceiros / Drone")
@@ -146,7 +157,6 @@ _usar_pasta_local = st.sidebar.checkbox(
     value=os.path.isdir(_pasta_terceiros_default),
     help="Já vem com as planilhas da pasta dados_terceiros/ no servidor.",
 )
-_kml_default = os.path.join(os.path.dirname(__file__), "dados", "fazenda_santa_virginia_completo.kml")
 _tem_kml = bool(arq_kml) or os.path.isfile(_kml_default)
 
 st.sidebar.markdown("---")
@@ -174,12 +184,35 @@ def _carregar_cobertura(bytes_xlsx):
     return ler_adubacao_cobertura(caminho_tmp)
 
 
+@st.cache_data(show_spinner="Lendo Cobertura (arquivo no servidor)...")
+def _carregar_cobertura_arquivo(caminho: str):
+    return ler_adubacao_cobertura(caminho)
+
+
 @st.cache_data(show_spinner="Lendo a planilha de Base/Subsolagem...")
 def _carregar_base(bytes_xlsx):
     caminho_tmp = "/tmp/_base.xlsx"
     with open(caminho_tmp, "wb") as f:
         f.write(bytes_xlsx)
     return ler_adubacao_base(caminho_tmp)
+
+
+@st.cache_data(show_spinner="Lendo Base (arquivo no servidor)...")
+def _carregar_base_arquivo(caminho: str):
+    return ler_adubacao_base(caminho)
+
+
+def _carregar_planilhas_pasta_dados() -> tuple[pd.DataFrame, pd.DataFrame, str | None]:
+    """Lê cobertura/base da pasta dados/ (deploy), sem upload."""
+    try:
+        paths = descobrir_arquivos_dados_painel(_dados_dir)
+    except FileNotFoundError:
+        return pd.DataFrame(), pd.DataFrame(), None
+    df_c = _carregar_cobertura_arquivo(str(paths["cobertura"]))
+    df_b = pd.DataFrame()
+    if paths["base"]:
+        df_b = _carregar_base_arquivo(str(paths["base"]))
+    return df_c, df_b, str(paths["cobertura"])
 
 
 @st.cache_data(show_spinner="Lendo os mapas de retiro (PDF)...")
@@ -222,6 +255,7 @@ def _preferencia_gis() -> str | None:
         return os.environ.get("SUPABASE_GIS_TABLE")
 
 
+_fonte_planilhas = "Supabase"
 if _usa_supabase:
     try:
         df_cobertura = carregar_cobertura(_engine)
@@ -232,7 +266,16 @@ if _usa_supabase:
             st.sidebar.success(f"🗺️ GIS Supabase: **{_fonte_gis}** ({len(gdf_db)} polígonos)")
         elif _bytes_kml():
             gdf_talhoes = _carregar_kml(_bytes_kml())
-            _fonte_gis = "KML enviado na sessão"
+            _fonte_gis = "KML em dados/ ou sessão"
+        if df_cobertura.empty:
+            df_disk, df_base_disk, _arq = _carregar_planilhas_pasta_dados()
+            if not df_disk.empty:
+                df_cobertura, df_base = df_disk, df_base_disk
+                _fonte_planilhas = f"arquivos em dados/ (ainda não no Supabase)"
+                st.sidebar.warning(
+                    "Cobertura vazia no Supabase — lendo planilhas de **`dados/`**. "
+                    "Use aba **☁️ Supabase** → *Sincronizar pasta dados/* ou rode `CARGA_DADOS_PAINEL.ps1`."
+                )
         df_cobertura = aplicar_calculadora_no_df(df_cobertura, "fertilizante", "kg_total", "area_total_ha")
         if not df_base.empty:
             df_base = aplicar_calculadora_no_df(df_base, "fertilizante", "kg_total", "area_plantada_ha")
@@ -241,23 +284,31 @@ if _usa_supabase:
         st.exception(e)
         st.stop()
     if df_cobertura.empty:
-        st.warning(
-            "Nenhum registro em `fato_adubacao_cobertura`. "
-            "Execute `sql/003_schema_adubacao_florestal.sql` e rode "
-            "`python scripts/sync_excel_to_supabase.py` com suas planilhas (DADOS_PAINEL)."
+        st.error("Nenhum dado de cobertura no Supabase nem em `dados/` no servidor.")
+        st.markdown(
+            """
+**Carga profissional (uma vez — o painel não perde os dados):**
+
+1. **No seu PC** (pasta `Desktop\\DADOS_PAINEL`):
+   ```powershell
+   cd adubacao-florestal-sv-streamlit
+   $env:SUPABASE_DB_URL = "postgresql+psycopg://postgres.SEU_REF:SUA_SENHA@aws-1-sa-east-1.pooler.supabase.com:6543/postgres"
+   powershell -ExecutionPolicy Bypass -File scripts\\CARGA_DADOS_PAINEL.ps1
+   ```
+2. **Ou via GitHub:** copie os xlsx/kml para `adubacao-florestal-sv-streamlit/dados/`, configure o secret **`SUPABASE_DB_URL`** em *Settings → Secrets → Actions* e rode o workflow **Sync DADOS_PAINEL → Supabase**.
+
+Streamlit Cloud: secret **`SUPABASE_DB_URL`** + origem **☁️ Supabase (oficial)** — sem upload por sessão.
+            """
         )
         st.stop()
     if gdf_talhoes is None:
-        st.error("Nenhuma geometria encontrada no Supabase.")
-        st.markdown(
-            """
-Verifique no **Table Editor** se existe **`public.dim_talhoes`** com coluna de geometria (PostGIS)
-ou a tabela **`dim_talhao_florestal`**. O painel lê automaticamente o GIS do Apontamento de Campo.
-
-Opcional: envie o KML na barra lateral **uma vez** e use a aba **Supabase → Sincronizar** para gravar.
-            """
-        )
-        st.stop()
+        if _bytes_kml():
+            gdf_talhoes = _carregar_kml(_bytes_kml())
+            _fonte_gis = "KML em dados/"
+        else:
+            st.error("Nenhuma geometria no Supabase nem KML em `dados/`.")
+            st.stop()
+    st.sidebar.caption(f"Planilhas: {_fonte_planilhas}")
 
 _modo_completo = _usa_supabase or bool(arq_kml and arq_cobertura and arq_base)
 
@@ -570,12 +621,11 @@ with aba_terceiros:
 
 # --- Supabase ---
 with aba_supabase:
-    st.subheader("Gravar no Supabase")
+    st.subheader("Fonte oficial — Supabase")
     engine = get_engine()
     if engine is None:
         st.warning(
-            "Conexão com Supabase não configurada. Defina `SUPABASE_DB_URL` em `.streamlit/secrets.toml` "
-            "(local) ou nos Secrets do Streamlit Cloud (produção) para habilitar a gravação."
+            "Defina `SUPABASE_DB_URL` nos Secrets do Streamlit Cloud (e no GitHub Actions para sync automático)."
         )
         st.code(
             'SUPABASE_DB_URL = "postgresql+psycopg://postgres.<ref>:<senha>@'
@@ -583,9 +633,44 @@ with aba_supabase:
             language="toml",
         )
     else:
-        st.success("Conexão com Supabase disponível.")
-        st.caption("Execute `sql/003_schema_adubacao_florestal.sql` no Supabase antes da primeira carga.")
-        if st.button("Sincronizar talhões + cobertura + base (upsert)"):
+        st.success("Conexão com Supabase disponível. O painel **não** depende de upload por sessão.")
+        st.caption("Schema: `sql/003_schema_adubacao_florestal.sql` (uma vez no SQL Editor).")
+
+        st.markdown("#### 1) Sincronizar pasta `dados/` do servidor → Supabase")
+        if os.path.isdir(_dados_dir):
+            try:
+                _paths_prev = descobrir_arquivos_dados_painel(_dados_dir)
+                st.write(
+                    f"KML: `{_paths_prev['kml'].name}` · Cobertura: `{_paths_prev['cobertura'].name}`"
+                    + (f" · Base: `{_paths_prev['base'].name}`" if _paths_prev["base"] else "")
+                )
+            except FileNotFoundError as e:
+                st.warning(str(e))
+            if st.button("Executar sync dados/ → Supabase", type="primary"):
+                with st.spinner("Gravando planilhas no banco…"):
+                    try:
+                        stats = sync_pasta_dados_painel(engine, _dados_dir)
+                        st.success(
+                            f"OK — talhões: {stats['talhoes']} · cobertura: {stats['cobertura']} · base: {stats['base']}"
+                        )
+                        st.info("Recarregue a página (R) para ler tudo do Supabase.")
+                    except Exception as e:
+                        st.error(f"Erro na carga: {e}")
+        else:
+            st.info("Copie os arquivos de `Desktop\\DADOS_PAINEL` para `dados/` no repositório ou use o PC (passo 2).")
+
+        st.markdown("#### 2) No PC (pasta DADOS_PAINEL, sem commitar planilhas)")
+        st.code(
+            "powershell -ExecutionPolicy Bypass -File scripts\\CARGA_DADOS_PAINEL.ps1",
+            language="powershell",
+        )
+
+        st.markdown("#### 3) GitHub Actions (push em `dados/` + secret `SUPABASE_DB_URL`)")
+        st.caption("Workflow: `.github/workflows/sync-adubacao-supabase.yml` — disparo automático ou manual em Actions.")
+
+        st.markdown("---")
+        st.markdown("#### Regravar apenas o que já está na memória do painel")
+        if st.button("Upsert talhões + cobertura + base (sessão atual)"):
             try:
                 n_t = gravar_talhoes(engine, gdf_validos)
                 n_c = gravar_cobertura(engine, df_cobertura, arquivo_origem="painel_streamlit")
@@ -593,10 +678,6 @@ with aba_supabase:
                 st.success(f"Supabase atualizado: {n_t} talhões, {n_c} lanç. cobertura, {n_b} base.")
             except Exception as e:
                 st.error(f"Erro ao gravar: {e}")
-                st.info(
-                    "Se a tabela ainda não existe, rode o script SQL `sql/003_schema_adubacao_florestal.sql` "
-                    "ou use `python scripts/sync_excel_to_supabase.py` no PC com a pasta DADOS_PAINEL."
-                )
 
 st.sidebar.markdown("---")
 st.sidebar.caption(
