@@ -1,0 +1,22 @@
+NOVO APP STREAMLIT (5 minutos)
+================================
+
+1) https://share.streamlit.io  ->  botao "Create app"
+
+2) Se NAO aparecer o repositorio:
+   https://github.com/settings/installations
+   -> Streamlit -> Configure -> marque
+   "pwa-comboio-posto-abastecimento" -> Save
+
+3) Create app:
+   Repository: lubrificacaomaquinassv-cloud/pwa-comboio-posto-abastecimento
+   Branch: painel-adubacao
+   Main file: app.py
+
+4) Secrets:
+   SUPABASE_DB_URL = (URL Transaction pooler Supabase)
+   SUPABASE_GIS_TABLE = dim_talhoes
+
+5) Deploy
+
+Pronto. Pode ignorar o app antigo "adubacao-florestal-sv".
