@@ -34,7 +34,7 @@ from db.supabase_io import (
 )
 from mapa_adubacao import render_mapa_adubacao
 
-PAINEL_BUILD = "2026.10.19-supabase"
+PAINEL_BUILD = "2026.10.19-gis-dim-talhoes"
 
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
@@ -126,7 +126,10 @@ if not _usa_supabase:
     arq_cobertura = st.sidebar.file_uploader("Adubação de Cobertura (xlsx)", type=["xlsx"])
     arq_base = st.sidebar.file_uploader("Adubação de Base / Subsolagem (xlsx)", type=["xlsx"])
 else:
-    st.sidebar.caption("Cobertura e base vêm do Supabase. KML só é necessário se a geometria ainda não foi gravada.")
+    st.sidebar.caption(
+        "Cobertura e base vêm do Supabase. O **mapa GIS** usa `public.dim_talhoes` "
+        "(Apontamento) ou `dim_talhao_florestal` — **KML não é obrigatório** se já houver polígonos no banco."
+    )
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Operações Terceiros / Drone")
@@ -210,16 +213,26 @@ def _carregar_df_terceiros() -> pd.DataFrame:
 df_cobertura = pd.DataFrame()
 df_base = pd.DataFrame()
 gdf_talhoes = None
+_fonte_gis = None
+
+def _preferencia_gis() -> str | None:
+    try:
+        return st.secrets.get("SUPABASE_GIS_TABLE") or os.environ.get("SUPABASE_GIS_TABLE")
+    except Exception:
+        return os.environ.get("SUPABASE_GIS_TABLE")
+
 
 if _usa_supabase:
     try:
         df_cobertura = carregar_cobertura(_engine)
         df_base = carregar_base(_engine)
-        gdf_db = carregar_talhoes_geom(_engine)
+        gdf_db, _fonte_gis = carregar_talhoes_geom(_engine, preferir_tabela=_preferencia_gis())
         if gdf_db is not None and len(gdf_db):
-            gdf_talhoes = gdf_db.rename(columns={"area_ha_kml": "area_ha_kml"})
+            gdf_talhoes = gdf_db
+            st.sidebar.success(f"🗺️ GIS Supabase: **{_fonte_gis}** ({len(gdf_db)} polígonos)")
         elif _bytes_kml():
             gdf_talhoes = _carregar_kml(_bytes_kml())
+            _fonte_gis = "KML enviado na sessão"
         df_cobertura = aplicar_calculadora_no_df(df_cobertura, "fertilizante", "kg_total", "area_total_ha")
         if not df_base.empty:
             df_base = aplicar_calculadora_no_df(df_base, "fertilizante", "kg_total", "area_plantada_ha")
@@ -235,7 +248,15 @@ if _usa_supabase:
         )
         st.stop()
     if gdf_talhoes is None:
-        st.error("Geometria não encontrada no Supabase. Envie o KML na barra lateral ou grave os talhões na aba Supabase.")
+        st.error("Nenhuma geometria encontrada no Supabase.")
+        st.markdown(
+            """
+Verifique no **Table Editor** se existe **`public.dim_talhoes`** com coluna de geometria (PostGIS)
+ou a tabela **`dim_talhao_florestal`**. O painel lê automaticamente o GIS do Apontamento de Campo.
+
+Opcional: envie o KML na barra lateral **uma vez** e use a aba **Supabase → Sincronizar** para gravar.
+            """
+        )
         st.stop()
 
 _modo_completo = _usa_supabase or bool(arq_kml and arq_cobertura and arq_base)
@@ -578,7 +599,10 @@ with aba_supabase:
                 )
 
 st.sidebar.markdown("---")
-st.sidebar.caption(f"Build **{PAINEL_BUILD}** · Supabase: {'sim' if _engine else 'não'}")
+st.sidebar.caption(
+    f"Build **{PAINEL_BUILD}** · Supabase: {'sim' if _engine else 'não'}"
+    + (f" · GIS: {_fonte_gis}" if _fonte_gis else "")
+)
 st.sidebar.caption(
     f"Talhões no mapa: {len(gdf_talhoes)} | Com número válido: {gdf_validos['talhao'].nunique()}\n\n"
     f"Retiro via PDF: {gdf_validos['talhao'].isin(de_para_pdf['talhao']).sum() if len(de_para_pdf) else 0} | "

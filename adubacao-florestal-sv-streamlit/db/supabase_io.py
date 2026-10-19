@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 import geopandas as gpd
@@ -37,24 +38,165 @@ def carregar_base(engine: Engine) -> pd.DataFrame:
     return pd.read_sql("SELECT * FROM fato_adubacao_base ORDER BY talhao", engine)
 
 
-def carregar_talhoes_geom(engine: Engine) -> gpd.GeoDataFrame | None:
+def _coluna_existe(engine: Engine, tabela: str, coluna: str, schema: str = "public") -> bool:
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = :schema AND table_name = :tabela AND column_name = :coluna
+                LIMIT 1
+                """
+            ),
+            {"schema": schema, "tabela": tabela, "coluna": coluna},
+        ).fetchone()
+    return row is not None
+
+
+def _coluna_geometria(engine: Engine, tabela: str, schema: str = "public") -> str | None:
+    """Descobre coluna PostGIS (geometry/geography) da tabela."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT a.attname
+                FROM pg_attribute a
+                JOIN pg_class c ON a.attrelid = c.oid
+                JOIN pg_namespace n ON c.relnamespace = n.oid
+                JOIN pg_type t ON a.atttypid = t.oid
+                WHERE n.nspname = :schema
+                  AND c.relname = :tabela
+                  AND t.typname IN ('geometry', 'geography')
+                  AND a.attnum > 0
+                  AND NOT a.attisdropped
+                ORDER BY a.attnum
+                LIMIT 1
+                """
+            ),
+            {"schema": schema, "tabela": tabela},
+        ).fetchall()
+    return rows[0][0] if rows else None
+
+
+def _read_postgis_talhoes(
+    engine: Engine,
+    sql: str,
+    geom_col: str = "geom",
+    fonte: str = "",
+) -> gpd.GeoDataFrame | None:
+    try:
+        gdf = gpd.read_postgis(sql, engine, geom_col=geom_col)
+    except Exception:
+        return None
+    if gdf is None or gdf.empty:
+        return None
+    gdf = gdf.set_crs(4326, allow_override=True)
+    if "talhao" in gdf.columns:
+        gdf["talhao"] = gdf["talhao"].astype(str).str.strip().str.upper()
+        gdf = gdf[gdf["talhao"].notna() & (gdf["talhao"] != "")].copy()
+    gdf.attrs["fonte_gis"] = fonte
+    return gdf
+
+
+def _carregar_geom_dim_talhao_florestal(engine: Engine) -> gpd.GeoDataFrame | None:
     if not tabela_existe(engine, "dim_talhao_florestal"):
         return None
+    geom_col = _coluna_geometria(engine, "dim_talhao_florestal") or "geom"
+    if not _coluna_existe(engine, "dim_talhao_florestal", geom_col):
+        return None
     with engine.connect() as conn:
-        n = conn.execute(text("SELECT COUNT(*) FROM dim_talhao_florestal WHERE geom IS NOT NULL")).scalar()
+        n = conn.execute(
+            text(f"SELECT COUNT(*) FROM dim_talhao_florestal WHERE {geom_col} IS NOT NULL")
+        ).scalar()
     if not n:
         return None
-    gdf = gpd.read_postgis(
-        """
-        SELECT talhao, classe, retiro, area_ha_kml, geom
-        FROM dim_talhao_florestal
-        WHERE geom IS NOT NULL
-        """,
+    return _read_postgis_talhoes(
         engine,
+        f"""
+        SELECT talhao, classe, retiro, area_ha_kml, {geom_col} AS geom
+        FROM dim_talhao_florestal
+        WHERE {geom_col} IS NOT NULL
+        """,
         geom_col="geom",
+        fonte="public.dim_talhao_florestal",
     )
-    gdf = gdf.set_crs(4326, allow_override=True)
-    return gdf
+
+
+def _carregar_geom_dim_talhoes_sigcf(engine: Engine) -> gpd.GeoDataFrame | None:
+    """
+    Cadastro GIS do Apontamento de Campo / SIGCF (já usado nas views vw_terceiros_drone_mapa).
+    """
+    if not tabela_existe(engine, "dim_talhoes"):
+        return None
+    geom_col = _coluna_geometria(engine, "dim_talhoes")
+    if not geom_col:
+        return None
+
+    if _coluna_existe(engine, "dim_talhoes", "codigo"):
+        expr_talhao = "upper(trim(d.codigo))"
+    elif _coluna_existe(engine, "dim_talhoes", "nome"):
+        expr_talhao = "upper(trim(d.nome))"
+    else:
+        return None
+
+    expr_classe = "d.classe_uso" if _coluna_existe(engine, "dim_talhoes", "classe_uso") else "NULL"
+    expr_area = "d.area_ha" if _coluna_existe(engine, "dim_talhoes", "area_ha") else "NULL"
+
+    join_locais = ""
+    expr_retiro = "NULL"
+    if tabela_existe(engine, "dim_locais") and _coluna_existe(engine, "dim_talhoes", "id_local"):
+        join_locais = "LEFT JOIN public.dim_locais l ON l.id = d.id_local"
+        expr_retiro = "l.nome"
+
+    filtro_ativo = "AND coalesce(d.ativo, true)" if _coluna_existe(engine, "dim_talhoes", "ativo") else ""
+
+    sql = f"""
+        SELECT
+            {expr_talhao} AS talhao,
+            {expr_classe} AS classe,
+            {expr_retiro} AS retiro,
+            {expr_area} AS area_ha_kml,
+            d.{geom_col} AS geom
+        FROM public.dim_talhoes d
+        {join_locais}
+        WHERE d.{geom_col} IS NOT NULL
+        {filtro_ativo}
+    """
+    return _read_postgis_talhoes(
+        engine,
+        sql,
+        geom_col="geom",
+        fonte="public.dim_talhoes (GIS Apontamento)",
+    )
+
+
+def carregar_talhoes_geom(
+    engine: Engine,
+    preferir_tabela: str | None = None,
+) -> tuple[gpd.GeoDataFrame | None, str | None]:
+    """
+    Carrega polígonos do Supabase. Ordem:
+      1) dim_talhao_florestal (painel adubação)
+      2) dim_talhoes (GIS SIGCF / Apontamento de Campo)
+    Retorna (GeoDataFrame, descrição da fonte).
+    """
+    preferida = (preferir_tabela or os.environ.get("SUPABASE_GIS_TABLE") or "").strip().lower()
+
+    loaders = [
+        ("dim_talhao_florestal", _carregar_geom_dim_talhao_florestal),
+        ("dim_talhoes", _carregar_geom_dim_talhoes_sigcf),
+    ]
+    if preferida == "dim_talhoes":
+        loaders.reverse()
+    elif preferida == "dim_talhao_florestal":
+        pass
+
+    for _nome, loader in loaders:
+        gdf = loader(engine)
+        if gdf is not None and len(gdf):
+            return gdf, gdf.attrs.get("fonte_gis")
+
+    return None, None
 
 
 def _geom_to_wkt(geom) -> str | None:
