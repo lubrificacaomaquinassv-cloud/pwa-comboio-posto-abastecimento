@@ -1,0 +1,61 @@
+# Dispare manualmente: Actions → "Supabase mapa completo" → Run workflow
+# Pré-requisito: Secret SUPABASE_DB_URL (Database password, pooler :6543)
+# Opcional: commitar o KML em dados/fazenda_santa_virginia_completo.kml
+
+name: Supabase mapa completo
+
+on:
+  workflow_dispatch:
+    inputs:
+      kml_path:
+        description: Caminho do KML no repositório
+        required: true
+        default: dados/fazenda_santa_virginia_completo.kml
+      skip_kml:
+        description: Pular carga KML (só SQL 005)
+        type: boolean
+        default: false
+
+jobs:
+  mapa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Dependências Python
+        run: pip install -r requirements.txt
+
+      - name: SQL 003 (tabelas adubação)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python scripts/aplicar_sql_arquivo.py sql/003_schema_adubacao_florestal.sql
+
+      - name: Carga KML → dim_talhao_florestal
+        if: ${{ !inputs.skip_kml }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python scripts/carga_somente_kml.py --kml "${{ inputs.kml_path }}"
+
+      - name: SQL 005 (view GeoJSON + RPC mapa)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python scripts/aplicar_sql_arquivo.py sql/005_api_mapa_talhoes.sql
+
+      - name: Verificar polígonos
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          e = create_engine(os.environ["SUPABASE_DB_URL"])
+          with e.connect() as c:
+              n = c.execute(text("select count(*) from dim_talhao_florestal where geom is not null")).scalar()
+          print(f"Poligonos no banco: {n}")
+          if not n:
+              raise SystemExit("KML nao carregou — confira o arquivo em dados/ ou skip_kml=false")
+          PY
