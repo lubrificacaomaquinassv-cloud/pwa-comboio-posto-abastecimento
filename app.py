@@ -33,8 +33,9 @@ from db.supabase_io import (
     ultimo_cobertura_por_talhao,
 )
 from mapa_adubacao import render_mapa_adubacao
+from db.secrets_helper import resolver_db_url
 
-PAINEL_BUILD = "2026.10.19-gis-dim-talhoes"
+PAINEL_BUILD = "2026.10.19-secrets-simples"
 
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
@@ -83,13 +84,11 @@ if _logo_path:
 # Conexao Supabase (opcional - so ativa se as credenciais existirem)
 # -----------------------------------------------------------------
 def get_engine():
-    """Cria a conexao SQLAlchemy com o Supabase via Transaction Pooler,
-    lendo as credenciais de st.secrets ou variaveis de ambiente.
-    Retorna None se as credenciais nao estiverem configuradas
-    (o painel continua funcionando 100% a partir dos uploads)."""
+    """Supabase via SUPABASE_DB_URL ou SUPABASE_URL + SUPABASE_DB_PASSWORD."""
     try:
         from sqlalchemy import create_engine
-        url = st.secrets.get("SUPABASE_DB_URL") or os.environ.get("SUPABASE_DB_URL")
+
+        url = resolver_db_url()
         if not url:
             return None
         return create_engine(url)
