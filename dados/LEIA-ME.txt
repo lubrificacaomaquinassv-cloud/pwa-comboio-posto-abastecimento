@@ -1,0 +1,9 @@
+Coloque aqui o KML da fazenda (uma vez), por exemplo:
+
+  fazenda_santa_virginia_completo.kml
+
+Depois:
+  GitHub → Settings → Secrets → Actions → SUPABASE_DB_URL
+  Actions → "Supabase mapa completo" → Run workflow
+
+Ou no PC: scripts\CARGA_SOMENTE_KML.ps1

@@ -1,0 +1,2 @@
+-- OBSOLETO — nao execute (usa d.geom fixo e gera erro 42703 se a coluna tiver outro nome).
+-- Use apenas: sql/005_api_mapa_talhoes.sql (detecta a coluna PostGIS e cria view + RPC).

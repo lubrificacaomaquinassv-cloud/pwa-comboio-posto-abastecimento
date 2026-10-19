@@ -21,7 +21,6 @@ from ingestion.kml_parser import ler_talhoes_kml, talhoes_com_codigo_ambiguo
 from ingestion.excel_parser import ler_adubacao_cobertura, ler_adubacao_base
 from ingestion.pdf_retiro_parser import ler_pasta_pdfs_retiro
 from npk_calculator import aplicar_calculadora_no_df, calcular_npk_aplicado, dose_por_ha
-from painel_terceiros import carregar_terceiros, render_aba_terceiros
 from db.supabase_io import (
     carregar_base,
     carregar_cobertura,
@@ -33,8 +32,15 @@ from db.supabase_io import (
     ultimo_cobertura_por_talhao,
 )
 from mapa_adubacao import render_mapa_adubacao
+from db.secrets_helper import listar_db_urls
+from db.supabase_rest import (
+    carregar_base_rest,
+    carregar_cobertura_rest,
+    carregar_talhoes_geom_rest,
+    get_supabase_client,
+)
 
-PAINEL_BUILD = "2026.10.19-gis-dim-talhoes"
+PAINEL_BUILD = "2026.10.20-api-rpc"
 
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
@@ -82,78 +88,71 @@ if _logo_path:
 # -----------------------------------------------------------------
 # Conexao Supabase (opcional - so ativa se as credenciais existirem)
 # -----------------------------------------------------------------
+@st.cache_resource(show_spinner="Conectando ao Supabase…")
 def get_engine():
-    """Cria a conexao SQLAlchemy com o Supabase via Transaction Pooler,
-    lendo as credenciais de st.secrets ou variaveis de ambiente.
-    Retorna None se as credenciais nao estiverem configuradas
-    (o painel continua funcionando 100% a partir dos uploads)."""
-    try:
-        from sqlalchemy import create_engine
-        url = st.secrets.get("SUPABASE_DB_URL") or os.environ.get("SUPABASE_DB_URL")
-        if not url:
-            return None
-        return create_engine(url)
-    except Exception:
-        return None
+    """Testa pooler aws-1 / aws-0 até conectar."""
+    from sqlalchemy import create_engine, text
+
+    erros: list[str] = []
+    for url in listar_db_urls():
+        try:
+            engine = create_engine(
+                url,
+                connect_args={"sslmode": "require"},
+                pool_pre_ping=True,
+            )
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return engine
+        except Exception as exc:
+            erros.append(str(exc)[:120])
+    if erros:
+        st.session_state["_supabase_erro"] = erros[-1]
+    return None
 
 
 # -----------------------------------------------------------------
 # Sidebar - fonte (Supabase ou planilhas)
 # -----------------------------------------------------------------
 _engine = get_engine()
-_opcoes_fonte = ["☁️ Supabase (oficial)", "📂 Planilhas (Excel)"]
-_idx_fonte = 0 if _engine else 1
-st.sidebar.title("📂 Fontes de dados")
-fonte_dados = st.sidebar.radio(
-    "Origem dos lançamentos",
-    _opcoes_fonte,
-    index=_idx_fonte,
-    help="Produção: dados lidos do Supabase. Desenvolvimento: upload das planilhas.",
-)
-_usa_supabase = fonte_dados.startswith("☁️")
+_sb_client = get_supabase_client()
+_modo_api = _engine is None and _sb_client is not None
 
-if _usa_supabase and _engine is None:
-    st.error(
-        "Modo Supabase selecionado, mas `SUPABASE_DB_URL` não está configurado "
-        "(Secrets do Streamlit Cloud ou `.streamlit/secrets.toml`)."
-    )
-    st.stop()
-
-arq_kml = st.sidebar.file_uploader("Mapa da fazenda (KML)", type=["kml"])
+st.sidebar.title("🌳 Adubação Florestal")
+_usa_supabase = True
+arq_kml = None
 arq_cobertura = None
 arq_base = None
-if not _usa_supabase:
-    arq_cobertura = st.sidebar.file_uploader("Adubação de Cobertura (xlsx)", type=["xlsx"])
-    arq_base = st.sidebar.file_uploader("Adubação de Base / Subsolagem (xlsx)", type=["xlsx"])
-else:
-    st.sidebar.caption(
-        "Cobertura e base vêm do Supabase. O **mapa GIS** usa `public.dim_talhoes` "
-        "(Apontamento) ou `dim_talhao_florestal` — **KML não é obrigatório** se já houver polígonos no banco."
+
+if _engine is None and _sb_client is None:
+    st.error("Supabase não configurado nos **Secrets**.")
+    st.markdown(
+        "**Igual aos outros painéis** (URL + chave — **não** precisa senha Postgres):\n\n"
+        "1. Rode no Supabase o SQL `sql/005_api_mapa_talhoes.sql` (uma vez).\n"
+        "2. Cole os Secrets abaixo e **Save** → **Reboot app**."
     )
+    st.code(
+        'SUPABASE_URL = "https://azhpxhrwhegfysoeqmft.supabase.co"\n'
+        'SUPABASE_KEY = "sua chave anon ou service_role (Settings -> API)"',
+        language="toml",
+    )
+    if st.session_state.get("_supabase_erro"):
+        st.caption(f"(Tentativa Postgres opcional falhou: {st.session_state['_supabase_erro']})")
+    with st.expander("Modo planilhas (só teste local)"):
+        _usa_supabase = False
+        arq_kml = st.file_uploader("KML", type=["kml"], key="dev_kml")
+        arq_cobertura = st.file_uploader("Cobertura xlsx", type=["xlsx"], key="dev_cob")
+        arq_base = st.file_uploader("Base xlsx", type=["xlsx"], key="dev_base")
+        if not (arq_kml and arq_cobertura and arq_base):
+            st.stop()
+elif _modo_api:
+    st.sidebar.success("☁️ Supabase (API — URL + chave)")
+    st.sidebar.caption("Mapa via **vw_dim_talhoes_geojson** — sem KML e sem senha Postgres.")
+else:
+    st.sidebar.success("☁️ Supabase (Postgres)")
+    st.sidebar.caption("Mapa via **dim_talhoes** — sem upload de KML.")
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("Operações Terceiros / Drone")
-arq_terceiros = st.sidebar.file_uploader(
-    "Planilhas COSER / F-ORION / EcoAero (xlsx, múltiplos)",
-    type=["xlsx"],
-    accept_multiple_files=True,
-)
-_pasta_terceiros_default = os.path.join(
-    os.path.dirname(__file__), "dados_terceiros"
-)
-_usar_pasta_local = st.sidebar.checkbox(
-    "Carregar planilhas terceiros (COSER / F-ORION / EcoAero)",
-    value=os.path.isdir(_pasta_terceiros_default),
-    help="Já vem com as planilhas da pasta dados_terceiros/ no servidor.",
-)
 _kml_default = os.path.join(os.path.dirname(__file__), "dados", "fazenda_santa_virginia_completo.kml")
-_tem_kml = bool(arq_kml) or os.path.isfile(_kml_default)
-
-st.sidebar.markdown("---")
-st.sidebar.caption(
-    "**Modo Terceiros/Drone:** abre direto (KML + planilhas já no servidor).\n\n"
-    "**Modo NPK completo:** suba também Cobertura + Base (xlsx)."
-)
 
 # -----------------------------------------------------------------
 # Ingestao (cache para nao reprocessar a cada interacao do usuario)
@@ -199,14 +198,6 @@ def _bytes_kml() -> bytes | None:
     return None
 
 
-def _carregar_df_terceiros() -> pd.DataFrame:
-    if arq_terceiros:
-        return carregar_terceiros(arq_terceiros)
-    if _usar_pasta_local and os.path.isdir(_pasta_terceiros_default):
-        return carregar_terceiros(_pasta_terceiros_default)
-    return pd.DataFrame()
-
-
 # -----------------------------------------------------------------
 # Carregar cobertura/base (Supabase ou upload)
 # -----------------------------------------------------------------
@@ -224,16 +215,26 @@ def _preferencia_gis() -> str | None:
 
 if _usa_supabase:
     try:
-        df_cobertura = carregar_cobertura(_engine)
-        df_base = carregar_base(_engine)
-        gdf_db, _fonte_gis = carregar_talhoes_geom(_engine, preferir_tabela=_preferencia_gis())
+        if _modo_api:
+            df_cobertura = carregar_cobertura_rest(_sb_client)
+            df_base = carregar_base_rest(_sb_client)
+            gdf_db, _fonte_gis, _gis_erro_api = carregar_talhoes_geom_rest(_sb_client)
+            if gdf_db is None and _gis_erro_api:
+                st.session_state["_gis_erro_api"] = _gis_erro_api
+        else:
+            df_cobertura = carregar_cobertura(_engine)
+            df_base = carregar_base(_engine)
+            gdf_db, _fonte_gis = carregar_talhoes_geom(_engine, preferir_tabela=_preferencia_gis())
         if gdf_db is not None and len(gdf_db):
             gdf_talhoes = gdf_db
-            st.sidebar.success(f"🗺️ GIS Supabase: **{_fonte_gis}** ({len(gdf_db)} polígonos)")
+            st.sidebar.success(f"🗺️ GIS: **{_fonte_gis}** ({len(gdf_db)} polígonos)")
         elif _bytes_kml():
             gdf_talhoes = _carregar_kml(_bytes_kml())
-            _fonte_gis = "KML enviado na sessão"
-        df_cobertura = aplicar_calculadora_no_df(df_cobertura, "fertilizante", "kg_total", "area_total_ha")
+            _fonte_gis = "KML (fallback)"
+        if not df_cobertura.empty:
+            df_cobertura = aplicar_calculadora_no_df(
+                df_cobertura, "fertilizante", "kg_total", "area_total_ha"
+            )
         if not df_base.empty:
             df_base = aplicar_calculadora_no_df(df_base, "fertilizante", "kg_total", "area_plantada_ha")
     except Exception as e:
@@ -242,77 +243,26 @@ if _usa_supabase:
         st.stop()
     if df_cobertura.empty:
         st.warning(
-            "Nenhum registro em `fato_adubacao_cobertura`. "
-            "Execute `sql/003_schema_adubacao_florestal.sql` e rode "
-            "`python scripts/sync_excel_to_supabase.py` com suas planilhas (DADOS_PAINEL)."
+            "Ainda não há dados em `fato_adubacao_cobertura`. O **mapa** abre; "
+            "ficha do talhão e KPIs de adubação aparecem após a carga das planilhas."
         )
-        st.stop()
     if gdf_talhoes is None:
-        st.error("Nenhuma geometria encontrada no Supabase.")
-        st.markdown(
-            """
-Verifique no **Table Editor** se existe **`public.dim_talhoes`** com coluna de geometria (PostGIS)
-ou a tabela **`dim_talhao_florestal`**. O painel lê automaticamente o GIS do Apontamento de Campo.
+        st.error("Mapa GIS: falta gravar os polígonos no Supabase.")
+        if _modo_api:
+            st.markdown(
+                """
+**`dim_talhoes` não tem polígono** (só código/área do Apontamento). Ordem:
 
-Opcional: envie o KML na barra lateral **uma vez** e use a aba **Supabase → Sincronizar** para gravar.
-            """
-        )
-        st.stop()
-
-_modo_completo = _usa_supabase or bool(arq_kml and arq_cobertura and arq_base)
-
-# -----------------------------------------------------------------
-# Modo Terceiros/Drone — KML + planilhas já embutidos (sem upload)
-# -----------------------------------------------------------------
-if not _modo_completo:
-    if not _tem_kml:
-        st.markdown(
-            '<div class="sv-banner"><h1>🌳 Painel de Adubação Florestal</h1>'
-            '<p>Fazenda Santa Vergínia — Terceiros/Drone · Cobertura · Base · NPK</p></div>',
-            unsafe_allow_html=True,
-        )
-        st.error("Mapa KML não encontrado no servidor.")
-        if _engine is None:
-            st.warning(
-                "**Versão antiga ou Secrets ausentes:** este deploy ainda não tem `SUPABASE_DB_URL` "
-                f"(build esperado: **{PAINEL_BUILD}**). Veja `COMO_ATUALIZAR_PAINEL_ONLINE.md`."
+1. Supabase SQL → **`sql/003_schema_adubacao_florestal.sql`**
+2. No PC (1×) → **`scripts/CARGA_DADOS_PAINEL.ps1`** com o KML da fazenda
+3. Supabase SQL → **`sql/005_api_mapa_talhoes.sql`** → **Reboot app** Streamlit
+                """
             )
-        st.markdown(
-            f"""
-**Para o painel oficial (Supabase + mapa Esri):**
-
-1. Publicar no GitHub o código com build **`{PAINEL_BUILD}`** (repo `adubacao-florestal-sv` ou pasta `adubacao-florestal-sv-streamlit` no PWA).
-2. Streamlit Cloud → **Secrets** → `SUPABASE_DB_URL` → **Redeploy**.
-3. Supabase → executar `sql/003_schema_adubacao_florestal.sql`.
-4. No PC → `powershell -File scripts\\CARGA_DADOS_PAINEL.ps1` (pasta `Desktop\\DADOS_PAINEL`).
-
-**Enquanto isso (modo manual):** envie o KML **`fazenda_santa_virginia_completo.kml`** na barra lateral
-(e planilhas Cobertura + Base se quiser o painel completo).
-            """
-        )
+            if st.session_state.get("_gis_erro_api"):
+                st.caption(f"Detalhe técnico: {st.session_state['_gis_erro_api']}")
+        else:
+            st.markdown("Verifique **`dim_talhoes`** com geometria PostGIS ou rode `005_api_mapa_talhoes.sql`.")
         st.stop()
-
-    try:
-        gdf_talhoes = _carregar_kml(_bytes_kml())
-        gdf_validos = gdf_talhoes[gdf_talhoes["talhao"].notna()].copy()
-        df_terceiros = _carregar_df_terceiros()
-    except Exception as e:
-        st.error(f"Erro ao processar KML / terceiros: {e}")
-        st.exception(e)
-        st.stop()
-
-    st.markdown(
-        '<div class="sv-banner"><h1>🚁 Operações Terceiros / Drone</h1>'
-        '<p>Fazenda Santa Vergínia — COSER · F-ORION · EcoAero</p></div>',
-        unsafe_allow_html=True,
-    )
-    st.success("Mapa KML e planilhas de terceiros carregados automaticamente.")
-    st.info(
-        "Para ver também **Cobertura**, **Base/Subsolagem** e **Calculadora NPK**, "
-        "suba na barra lateral as planilhas de Adubação de Cobertura e Base (xlsx)."
-    )
-    render_aba_terceiros(df_terceiros, gdf_talhoes=gdf_validos, get_engine=get_engine)
-    st.stop()
 
 if not _usa_supabase:
     try:
@@ -337,10 +287,16 @@ except Exception as e:
 # -----------------------------------------------------------------
 gdf_validos = gdf_talhoes[gdf_talhoes["talhao"].notna()].copy()
 
-de_para_planilhas = pd.concat([
-    df_cobertura[["talhao", "retiro"]],
-    df_base[["talhao", "retiro"]],
-]).drop_duplicates(subset="talhao", keep="first")
+_partes_retiro = []
+if not df_cobertura.empty:
+    _partes_retiro.append(df_cobertura[["talhao", "retiro"]])
+if not df_base.empty:
+    _partes_retiro.append(df_base[["talhao", "retiro"]])
+de_para_planilhas = (
+    pd.concat(_partes_retiro, ignore_index=True).drop_duplicates(subset="talhao", keep="first")
+    if _partes_retiro
+    else pd.DataFrame(columns=["talhao", "retiro"])
+)
 
 de_para_retiro = pd.concat([
     de_para_pdf[["talhao", "retiro"]] if len(de_para_pdf) else pd.DataFrame(columns=["talhao", "retiro"]),
@@ -349,18 +305,29 @@ de_para_retiro = pd.concat([
 
 gdf_validos = gdf_validos.merge(de_para_retiro, on="talhao", how="left")
 
-area_cobertura_talhao = df_cobertura.groupby("talhao").agg(
-    area_adubada_cobertura_ha=("area_total_ha", "sum"),
-    kg_total_cobertura=("kg_total", "sum"),
-    n_kg_cobertura=("N_kg", "sum"),
-    p2o5_kg_cobertura=("P2O5_kg", "sum"),
-    k2o_kg_cobertura=("K2O_kg", "sum"),
-).reset_index()
+if df_cobertura.empty:
+    area_cobertura_talhao = pd.DataFrame(
+        columns=[
+            "talhao", "area_adubada_cobertura_ha", "kg_total_cobertura",
+            "n_kg_cobertura", "p2o5_kg_cobertura", "k2o_kg_cobertura",
+        ]
+    )
+else:
+    area_cobertura_talhao = df_cobertura.groupby("talhao").agg(
+        area_adubada_cobertura_ha=("area_total_ha", "sum"),
+        kg_total_cobertura=("kg_total", "sum"),
+        n_kg_cobertura=("N_kg", "sum"),
+        p2o5_kg_cobertura=("P2O5_kg", "sum"),
+        k2o_kg_cobertura=("K2O_kg", "sum"),
+    ).reset_index()
 
-area_base_feito = df_base[df_base["status"] == "Subsolado/Adubado"].groupby("talhao").agg(
-    area_subsolada_ha=("area_plantada_ha", "sum"),
-    kg_total_base=("kg_total", "sum"),
-).reset_index()
+if df_base.empty:
+    area_base_feito = pd.DataFrame(columns=["talhao", "area_subsolada_ha", "kg_total_base"])
+else:
+    area_base_feito = df_base[df_base["status"] == "Subsolado/Adubado"].groupby("talhao").agg(
+        area_subsolada_ha=("area_plantada_ha", "sum"),
+        kg_total_base=("kg_total", "sum"),
+    ).reset_index()
 
 painel = gdf_validos.merge(area_cobertura_talhao, on="talhao", how="left")
 painel = painel.merge(area_base_feito, on="talhao", how="left")
@@ -422,9 +389,8 @@ else:
     col3.metric("% Base/Subsolagem", "—")
 col4.metric("Talhões com alerta de sequência", int(painel_f["alerta_sequencia"].sum()))
 
-aba_mapa, aba_cobertura, aba_base, aba_calc, aba_terceiros, aba_supabase = st.tabs(
-    ["🗺️ Mapa", "🌾 Cobertura", "🚜 Base/Subsolagem", "🧮 Calculadora NPK",
-     "🚁 Terceiros / Drone", "☁️ Supabase"]
+aba_mapa, aba_cobertura, aba_base, aba_calc, aba_supabase = st.tabs(
+    ["🗺️ Mapa", "🌾 Cobertura", "🚜 Base/Subsolagem", "🧮 Calculadora NPK", "☁️ Admin"]
 )
 
 # --- Mapa ---
@@ -557,16 +523,6 @@ with aba_calc:
     nao_identificados = df_cobertura[df_cobertura["formula_npk"] == "não identificada"]["fertilizante"].unique()
     if len(nao_identificados) > 0:
         st.warning(f"Fertilizantes sem fórmula reconhecida (cadastrar em FORMULAS_ADUBO): {list(nao_identificados)}")
-
-# --- Terceiros / Drone ---
-with aba_terceiros:
-    try:
-        df_terceiros = _carregar_df_terceiros()
-    except Exception as e:
-        st.error(f"Erro ao ler planilhas de terceiros: {e}")
-        st.exception(e)
-        df_terceiros = pd.DataFrame()
-    render_aba_terceiros(df_terceiros, gdf_talhoes=gdf_validos, get_engine=get_engine)
 
 # --- Supabase ---
 with aba_supabase:
