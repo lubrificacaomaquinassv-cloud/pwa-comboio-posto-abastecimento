@@ -40,7 +40,7 @@ from db.supabase_rest import (
     get_supabase_client,
 )
 
-PAINEL_BUILD = "2026.10.20-base-vazia"
+PAINEL_BUILD = "2026.10.20-filtros-npk"
 
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
@@ -380,13 +380,16 @@ painel["alerta_sequencia"] = (painel["pct_cobertura"] > 0) & (painel["pct_base"]
 st.sidebar.markdown("---")
 st.sidebar.title("🔍 Filtros")
 retiros_disponiveis = sorted([r for r in painel["retiro"].dropna().unique()])
-filtro_retiro = st.sidebar.multiselect("Retiro", options=retiros_disponiveis, default=retiros_disponiveis)
-filtro_classe = st.sidebar.multiselect(
-    "Classe", options=sorted(painel["classe"].dropna().unique()),
-    default=sorted(painel["classe"].dropna().unique())
-)
+classes_disponiveis = sorted(painel["classe"].dropna().unique())
+filtro_classe = st.sidebar.multiselect("Classe", options=classes_disponiveis, default=classes_disponiveis)
+if retiros_disponiveis:
+    filtro_retiro = st.sidebar.multiselect("Retiro", options=retiros_disponiveis, default=retiros_disponiveis)
+    mask_retiro = painel["retiro"].isin(filtro_retiro)
+else:
+    st.sidebar.caption("Retiro: virá das planilhas/PDF (mapa usa só classe por enquanto).")
+    mask_retiro = pd.Series(True, index=painel.index)
 
-painel_f = painel[painel["retiro"].isin(filtro_retiro) & painel["classe"].isin(filtro_classe)]
+painel_f = painel[mask_retiro & painel["classe"].isin(filtro_classe)]
 
 # -----------------------------------------------------------------
 # Corpo principal
@@ -534,15 +537,21 @@ with aba_calc:
 
     st.markdown("---")
     st.subheader("NPK calculado automaticamente — todos os lançamentos de Cobertura")
-    st.dataframe(
-        df_cobertura[["talhao", "retiro", "fertilizante", "formula_npk", "kg_total",
-                      "N_kg", "P2O5_kg", "K2O_kg", "N_kg_ha", "P2O5_kg_ha", "K2O_kg_ha"]],
-        use_container_width=True,
-    )
-
-    nao_identificados = df_cobertura[df_cobertura["formula_npk"] == "não identificada"]["fertilizante"].unique()
-    if len(nao_identificados) > 0:
-        st.warning(f"Fertilizantes sem fórmula reconhecida (cadastrar em FORMULAS_ADUBO): {list(nao_identificados)}")
+    _cols_npk = [
+        "talhao", "retiro", "fertilizante", "formula_npk", "kg_total",
+        "N_kg", "P2O5_kg", "K2O_kg", "N_kg_ha", "P2O5_kg_ha", "K2O_kg_ha",
+    ]
+    if df_cobertura.empty:
+        st.info("Sem lançamentos de cobertura no Supabase. A calculadora manual acima continua disponível.")
+    else:
+        cols_ok = [c for c in _cols_npk if c in df_cobertura.columns]
+        st.dataframe(df_cobertura[cols_ok], use_container_width=True)
+        if "formula_npk" in df_cobertura.columns:
+            nao_identificados = df_cobertura[df_cobertura["formula_npk"] == "não identificada"]["fertilizante"].unique()
+            if len(nao_identificados) > 0:
+                st.warning(
+                    f"Fertilizantes sem fórmula reconhecida (cadastrar em FORMULAS_ADUBO): {list(nao_identificados)}"
+                )
 
 # --- Supabase ---
 with aba_supabase:
