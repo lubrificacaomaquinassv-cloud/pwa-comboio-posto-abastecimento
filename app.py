@@ -40,7 +40,7 @@ from db.supabase_rest import (
     get_supabase_client,
 )
 
-PAINEL_BUILD = "2026.10.20-kml-repo"
+PAINEL_BUILD = "2026.10.20-kml-raiz-ou-dados"
 
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
@@ -152,7 +152,20 @@ else:
     st.sidebar.success("☁️ Supabase (Postgres)")
     st.sidebar.caption("Mapa via **dim_talhoes** — sem upload de KML.")
 
-_kml_default = os.path.join(os.path.dirname(__file__), "dados", "fazenda_santa_virginia_completo.kml")
+def _caminhos_kml() -> list[str]:
+    raiz = os.path.dirname(__file__)
+    nomes = [
+        os.path.join(raiz, "dados", "fazenda_santa_virginia_completo.kml"),
+        os.path.join(raiz, "fazenda_santa_virginia_completo.kml"),
+    ]
+    pasta_dados = os.path.join(raiz, "dados")
+    if os.path.isdir(pasta_dados):
+        for nome in sorted(os.listdir(pasta_dados)):
+            if nome.lower().endswith(".kml"):
+                p = os.path.join(pasta_dados, nome)
+                if p not in nomes:
+                    nomes.append(p)
+    return nomes
 
 # -----------------------------------------------------------------
 # Ingestao (cache para nao reprocessar a cada interacao do usuario)
@@ -192,9 +205,10 @@ def _carregar_de_para_pdf():
 def _bytes_kml() -> bytes | None:
     if arq_kml:
         return arq_kml.getvalue()
-    if os.path.isfile(_kml_default):
-        with open(_kml_default, "rb") as f:
-            return f.read()
+    for caminho in _caminhos_kml():
+        if os.path.isfile(caminho):
+            with open(caminho, "rb") as f:
+                return f.read()
     return None
 
 
@@ -255,10 +269,9 @@ if _usa_supabase:
 
 **Caminho simples (igual ao mapa que você já rodou em Python):**
 
-1. Copie o KML para **`dados/fazenda_santa_virginia_completo.kml`** no projeto  
-   (duplo clique em **`COPIAR_KML_PARA_PAINEL.bat`**)
-2. `git add` → `commit` → `push`
-3. Streamlit → **Reboot app** (branch **`painel-adubacao`**)
+1. KML em **`dados/`** ou na **raiz** do projeto (`fazenda_santa_virginia_completo.kml`)
+2. No PC: `git add` → `commit` → `push` (precisa ir pro GitHub)
+3. Streamlit → **Reiniciar app** (branch **`painel-adubacao`** ou **`adubacao-florestal-sv`**)
 
 Opcional (só Lovable/API com GeoJSON no banco): carga Postgres + SQL `005`.
             """
