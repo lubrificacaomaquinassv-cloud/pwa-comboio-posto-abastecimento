@@ -40,7 +40,7 @@ from db.supabase_rest import (
     get_supabase_client,
 )
 
-PAINEL_BUILD = "2026.10.20-filtros-npk"
+PAINEL_BUILD = "2026.10.20-mapa-folium"
 
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
