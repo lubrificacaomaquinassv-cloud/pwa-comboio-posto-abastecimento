@@ -25,7 +25,7 @@ if (-not (Test-Path $PastaDados)) {
 $kml = Get-ChildItem -Path $PastaDados -Filter *.kml -File -ErrorAction SilentlyContinue |
     Sort-Object Length -Descending | Select-Object -First 1
 if (-not $kml) {
-    Write-Host "AVISO: Nenhum .kml em $PastaDados — usando GIS já gravado no Supabase (dim_talhoes)." -ForegroundColor Yellow
+    Write-Host "AVISO: Sem .kml — mapa NAO sera gravado (dim_talhoes nao tem poligono). Use CARGA_SOMENTE_KML.ps1" -ForegroundColor Yellow
 }
 
 $cobertura = Get-ChildItem -Path $PastaDados -Filter *.xlsx -File |
