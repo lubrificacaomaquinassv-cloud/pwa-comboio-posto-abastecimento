@@ -34,6 +34,8 @@ from db.supabase_io import (
 )
 from mapa_adubacao import render_mapa_adubacao
 
+PAINEL_BUILD = "2026.10.19-supabase"
+
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
 # ===================================================================
@@ -248,7 +250,25 @@ if not _modo_completo:
             '<p>Fazenda Santa Vergínia — Terceiros/Drone · Cobertura · Base · NPK</p></div>',
             unsafe_allow_html=True,
         )
-        st.error("Mapa KML não encontrado. Suba o arquivo **fazenda_santa_virginia_completo.kml** na barra lateral.")
+        st.error("Mapa KML não encontrado no servidor.")
+        if _engine is None:
+            st.warning(
+                "**Versão antiga ou Secrets ausentes:** este deploy ainda não tem `SUPABASE_DB_URL` "
+                f"(build esperado: **{PAINEL_BUILD}**). Veja `COMO_ATUALIZAR_PAINEL_ONLINE.md`."
+            )
+        st.markdown(
+            f"""
+**Para o painel oficial (Supabase + mapa Esri):**
+
+1. Publicar no GitHub o código com build **`{PAINEL_BUILD}`** (repo `adubacao-florestal-sv` ou pasta `adubacao-florestal-sv-streamlit` no PWA).
+2. Streamlit Cloud → **Secrets** → `SUPABASE_DB_URL` → **Redeploy**.
+3. Supabase → executar `sql/003_schema_adubacao_florestal.sql`.
+4. No PC → `powershell -File scripts\\CARGA_DADOS_PAINEL.ps1` (pasta `Desktop\\DADOS_PAINEL`).
+
+**Enquanto isso (modo manual):** envie o KML **`fazenda_santa_virginia_completo.kml`** na barra lateral
+(e planilhas Cobertura + Base se quiser o painel completo).
+            """
+        )
         st.stop()
 
     try:
@@ -558,6 +578,7 @@ with aba_supabase:
                 )
 
 st.sidebar.markdown("---")
+st.sidebar.caption(f"Build **{PAINEL_BUILD}** · Supabase: {'sim' if _engine else 'não'}")
 st.sidebar.caption(
     f"Talhões no mapa: {len(gdf_talhoes)} | Com número válido: {gdf_validos['talhao'].nunique()}\n\n"
     f"Retiro via PDF: {gdf_validos['talhao'].isin(de_para_pdf['talhao']).sum() if len(de_para_pdf) else 0} | "
