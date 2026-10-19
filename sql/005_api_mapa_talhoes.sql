@@ -1,7 +1,16 @@
--- Mapa na API (Streamlit URL + chave) — rode INTEIRO uma vez (Supabase SQL Editor ou DBeaver no MESMO banco do projeto).
--- Nao use o arquivo 004 (geom fixo).
+-- Mapa na API — rode DEPOIS de sql/003 e de gravar poligonos em dim_talhao_florestal (KML uma vez).
+-- dim_talhoes (Apontamento) NAO tem coluna de poligono — so codigo/area_ha.
 
 CREATE EXTENSION IF NOT EXISTS postgis;
+
+CREATE TABLE IF NOT EXISTS public.dim_talhao_florestal (
+    talhao      TEXT PRIMARY KEY,
+    classe      TEXT,
+    retiro      TEXT,
+    area_ha_kml NUMERIC(12, 2),
+    geom        geometry(MultiPolygon, 4326),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 DO $setup$
 DECLARE
@@ -11,7 +20,7 @@ DECLARE
     sql_view text;
     n bigint;
 BEGIN
-    FOREACH tbl IN ARRAY ARRAY['dim_talhoes', 'dim_talhao_florestal']
+    FOREACH tbl IN ARRAY ARRAY['dim_talhao_florestal', 'dim_talhoes']
     LOOP
         gcol := NULL;
 
@@ -29,23 +38,11 @@ BEGIN
         LIMIT 1;
 
         IF gcol IS NULL THEN
-            SELECT column_name INTO gcol
-            FROM information_schema.columns
-            WHERE table_schema = 'public'
-              AND table_name = tbl
-              AND udt_name IN ('geometry', 'geography')
-            LIMIT 1;
-        END IF;
-
-        IF gcol IS NULL THEN
             FOREACH cand IN ARRAY ARRAY['geom', 'geometry', 'the_geom', 'shape', 'poligono', 'geometria']
             LOOP
                 IF EXISTS (
-                    SELECT 1
-                    FROM information_schema.columns
-                    WHERE table_schema = 'public'
-                      AND table_name = tbl
-                      AND column_name = cand
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = tbl AND column_name = cand
                 ) THEN
                     gcol := cand;
                     EXIT;
@@ -95,13 +92,13 @@ BEGIN
         END IF;
 
         EXECUTE sql_view;
-        RAISE NOTICE 'vw_dim_talhoes_geojson OK — tabela %, coluna %, % linhas com geometria.', tbl, gcol, n;
+        RAISE NOTICE 'OK: view vw_dim_talhoes_geojson — %.% (% poligonos)', tbl, gcol, n;
         RETURN;
     END LOOP;
 
     RAISE EXCEPTION
-        'Nenhuma geometria em dim_talhoes nem dim_talhao_florestal. '
-        'Confira PostGIS (CREATE EXTENSION postgis) e rode sql/DIAGNOSTICO_GEOMETRIA.sql.';
+        'Sem poligonos no banco. dim_talhoes e so cadastro (KML do Apontamento nao grava geometria). '
+        'No PC: rode sql/003, depois scripts/CARGA_DADOS_PAINEL.ps1 com o KML (1x), depois execute este 005 de novo.';
 END
 $setup$;
 

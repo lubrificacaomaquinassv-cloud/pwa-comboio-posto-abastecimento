@@ -247,19 +247,15 @@ if _usa_supabase:
             "ficha do talhão e KPIs de adubação aparecem após a carga das planilhas."
         )
     if gdf_talhoes is None:
-        st.error("Mapa GIS ainda não liberado via API.")
+        st.error("Mapa GIS: falta gravar os polígonos no Supabase.")
         if _modo_api:
             st.markdown(
                 """
-**Faça isto no Supabase (SQL Editor), uma vez:**
+**`dim_talhoes` não tem polígono** (só código/área do Apontamento). Ordem:
 
-1. Abra o arquivo **`sql/005_api_mapa_talhoes.sql`** (branch `painel-adubacao` no GitHub)  
-2. Cole tudo → **Run**
-
-Se ainda falhar, nos **Secrets** use a chave **`service_role`** (Settings → API) em  
-`SUPABASE_KEY` (só no Streamlit, nunca no site público).
-
-Depois: **Reboot app**.
+1. Supabase SQL → **`sql/003_schema_adubacao_florestal.sql`**
+2. No PC (1×) → **`scripts/CARGA_DADOS_PAINEL.ps1`** com o KML da fazenda
+3. Supabase SQL → **`sql/005_api_mapa_talhoes.sql`** → **Reboot app** Streamlit
                 """
             )
             if st.session_state.get("_gis_erro_api"):
