@@ -40,7 +40,7 @@ from db.supabase_rest import (
     get_supabase_client,
 )
 
-PAINEL_BUILD = "2026.10.20-kml-raiz-ou-dados"
+PAINEL_BUILD = "2026.10.20-base-vazia"
 
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
@@ -339,11 +339,13 @@ else:
 
 if df_base.empty:
     area_base_feito = pd.DataFrame(columns=["talhao", "area_subsolada_ha", "kg_total_base"])
-else:
+elif "status" in df_base.columns:
     area_base_feito = df_base[df_base["status"] == "Subsolado/Adubado"].groupby("talhao").agg(
         area_subsolada_ha=("area_plantada_ha", "sum"),
         kg_total_base=("kg_total", "sum"),
     ).reset_index()
+else:
+    area_base_feito = pd.DataFrame(columns=["talhao", "area_subsolada_ha", "kg_total_base"])
 
 painel = gdf_validos.merge(area_cobertura_talhao, on="talhao", how="left")
 painel = painel.merge(area_base_feito, on="talhao", how="left")
@@ -500,11 +502,13 @@ with aba_base:
     st.subheader("Execução por retiro (Base/Subsolagem)")
     st.dataframe(resumo_retiro_base, use_container_width=True)
 
-    st.subheader("Pendências (\"A subsolar\")")
-    st.dataframe(df_base[df_base["status"] == "A subsolar"], use_container_width=True)
-
-    st.subheader("Já subsolado/adubado")
-    st.dataframe(df_base[df_base["status"] == "Subsolado/Adubado"], use_container_width=True)
+    if df_base.empty or "status" not in df_base.columns:
+        st.info("Sem planilha de base/subsolagem no Supabase ainda. O mapa e a aba Cobertura funcionam normalmente.")
+    else:
+        st.subheader("Pendências (\"A subsolar\")")
+        st.dataframe(df_base[df_base["status"] == "A subsolar"], use_container_width=True)
+        st.subheader("Já subsolado/adubado")
+        st.dataframe(df_base[df_base["status"] == "Subsolado/Adubado"], use_container_width=True)
 
 # --- Calculadora NPK ---
 with aba_calc:
