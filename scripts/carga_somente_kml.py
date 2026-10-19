@@ -36,9 +36,17 @@ def main() -> None:
 
     gdf = ler_talhoes_kml(args.kml)
     gdf = gdf[gdf["talhao"].notna()].copy()
+    print(f"KML: {len(gdf)} poligonos lidos.")
     n = gravar_talhoes(engine, gdf)
-    print(f"OK: {n} talhoes com poligono em dim_talhao_florestal.")
-    print("Agora rode sql/005_api_mapa_talhoes.sql no Supabase e Reboot no Streamlit.")
+    with engine.connect() as conn:
+        total = conn.execute(
+            text("SELECT count(*) FROM dim_talhao_florestal WHERE geom IS NOT NULL")
+        ).scalar()
+    print(f"OK: gravados {n} | total no banco: {total}")
+    if not total:
+        print("ERRO: banco ainda vazio — confira SUPABASE_DB_URL (senha Database, pooler 6543).", file=sys.stderr)
+        sys.exit(1)
+    print("Proximo: sql/005_api_mapa_talhoes.sql no DBeaver + Reboot Streamlit.")
 
 
 if __name__ == "__main__":
