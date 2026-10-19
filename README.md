@@ -1,28 +1,74 @@
-# Adubação Florestal 2026 — Fazenda Santa Virgínia
+# Adubação Florestal SV
 
-Painel Streamlit de **silvicultura / silvipastoril**: cobertura, base, mapa GIS, calculadora NPK.
+Painel de acompanhamento de adubação de cobertura e adubação de base
+(subsolagem) na Fazenda Santa Vergínia, com mapa interativo geoespacial
+e calculadora de NPK.
 
-**URL:** https://adubacao-florestal-sv.streamlit.app
+Repositório: `lubrificacaomaquinassv-cloud/adubacao-florestal-sv`
 
-## Streamlit Cloud
+## O que o painel faz
 
-| Campo | Valor |
-|-------|-------|
-| Repositório | `lubrificacaomaquinassv-cloud/adubacao-florestal-sv` |
-| Branch | `main` |
-| Main file | `app.py` |
+1. Lê o mapa da fazenda (KML) e extrai os talhões (número, classe, área) da
+   pasta **"Talhões (TIP / Silvipastoril / Silvicultura / Pastagem)"**.
+2. Lê a planilha de **Adubação de Cobertura** (uma aba por retiro).
+3. Lê a planilha de **Adubação de Base / Subsolagem** (bloco "Subsolado" +
+   bloco "A subsolar" na mesma aba).
+4. Calcula o NPK real aplicado (N, P₂O₅, K₂O em kg e kg/ha) extraindo a
+   fórmula direto do nome do fertilizante (ex: "Sulfammo 10-05-18").
+5. Cruza tudo com o cadastro geoespacial e mostra: mapa colorido por status
+   de execução, KPIs, tabelas por retiro, e uma calculadora interativa.
+6. Fonte oficial: **Supabase** (`sql/003_schema_adubacao_florestal.sql` + carga via painel ou `scripts/sync_excel_to_supabase.py`).
 
-## PC local
+## Rodar localmente
 
-```bat
-py -m pip install -r requirements.txt
-py -m streamlit run app.py
+```bash
+pip install -r requirements.txt
+streamlit run app.py
 ```
 
-## Arquivos na nuvem
+Depois suba na barra lateral: o `.kml`, a planilha de Cobertura e a
+planilha de Base/Subsolagem.
 
-Envie pela barra lateral do painel:
+## Conectar ao Supabase (opcional)
 
-1. Adubação de Cobertura (.xlsx)
-2. Adubação de Base 2026 (.xlsx)
-3. fazenda_santa_virginia_completo.kml
+1. No SQL Editor do Supabase, execute `sql/003_schema_adubacao_florestal.sql`
+   (PostGIS + `dim_talhao_florestal`, `fato_adubacao_cobertura`, `fato_adubacao_base`).
+2. Copie `.streamlit/secrets.toml.example` para `.streamlit/secrets.toml`
+   e preencha `SUPABASE_DB_URL` com a string de conexão do **Transaction
+   Pooler** (porta 6543), no mesmo padrão dos outros sistemas (SIGCF,
+   SIGPEC).
+3. No Streamlit Cloud, configure o mesmo valor em **Settings → Secrets**.
+4. Com isso, a aba "☁️ Supabase" do painel habilita o botão de gravação.
+
+## Deploy no Streamlit Cloud
+
+1. Suba este repositório em
+   `github.com/lubrificacaomaquinassv-cloud/adubacao-florestal-sv`.
+2. Em [share.streamlit.io](https://share.streamlit.io), aponte para
+   `app.py` na branch principal.
+3. Configure o Secret `SUPABASE_DB_URL` (passo acima) se for usar
+   gravação no banco.
+
+## Pontos de atenção nos dados (encontrados na validação)
+
+- **43 códigos de talhão se repetem no KML.** Em 13 casos é duplicata real
+  de digitalização (mesmo talhão, mesma classe, mesma área — o parser já
+  remove automaticamente). Nos outros **30 casos, o mesmo número de talhão
+  existe em classes diferentes** (ex: talhão "17" em Silvicultura *e* em
+  Silvipastoril, com áreas diferentes). O painel avisa esses casos na aba
+  Mapa — vale confirmar com o coordenador da floresta a qual classe cada
+  lançamento das planilhas se refere, para joins 100% corretos.
+- **2 talhões da planilha de Cobertura não têm correspondência no KML**
+  atual: `201` e `270/271 FRANGE`. Podem ser talhão novo, erro de digitação,
+  ou nomenclatura diferente (ex: talhão fracionado) — vale checar.
+- **Retiro não vem no KML.** O painel infere o retiro automaticamente a
+  partir do nome da aba (Cobertura) ou da coluna "Horto" (Base). Se algum
+  talhão não aparecer em nenhuma das duas planilhas ainda, ele fica sem
+  retiro atribuído até a primeira aplicação ser registrada.
+
+## Próximos passos (fora do escopo desta versão)
+
+- Módulo de custo (preço de insumo + hora-máquina/mão de obra por talhão) —
+  intencionalmente deixado de fora agora; entra como nova aba consumindo as
+  mesmas tabelas, sem alterar o que já está pronto.
+- Cadastro oficial de retiro por talhão (hoje inferido das planilhas).
