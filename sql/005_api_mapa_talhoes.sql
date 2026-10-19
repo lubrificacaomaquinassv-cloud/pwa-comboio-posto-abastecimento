@@ -1,10 +1,13 @@
--- Mapa na API (Streamlit URL + chave) — rode INTEIRO uma vez (DBeaver ou Supabase SQL Editor).
+-- Mapa na API (Streamlit URL + chave) — rode INTEIRO uma vez (Supabase SQL Editor ou DBeaver no MESMO banco do projeto).
 -- Nao use o arquivo 004 (geom fixo).
+
+CREATE EXTENSION IF NOT EXISTS postgis;
 
 DO $setup$
 DECLARE
     tbl text;
     gcol text;
+    cand text;
     sql_view text;
     n bigint;
 BEGIN
@@ -12,10 +15,17 @@ BEGIN
     LOOP
         gcol := NULL;
 
-        SELECT f_geometry_column INTO gcol
-        FROM geometry_columns
-        WHERE f_table_schema = 'public'
-          AND f_table_name = tbl
+        SELECT a.attname INTO gcol
+        FROM pg_attribute a
+        JOIN pg_class c ON a.attrelid = c.oid
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        JOIN pg_type t ON a.atttypid = t.oid
+        WHERE n.nspname = 'public'
+          AND c.relname = tbl
+          AND t.typname IN ('geometry', 'geography')
+          AND a.attnum > 0
+          AND NOT a.attisdropped
+        ORDER BY a.attnum
         LIMIT 1;
 
         IF gcol IS NULL THEN
@@ -25,6 +35,22 @@ BEGIN
               AND table_name = tbl
               AND udt_name IN ('geometry', 'geography')
             LIMIT 1;
+        END IF;
+
+        IF gcol IS NULL THEN
+            FOREACH cand IN ARRAY ARRAY['geom', 'geometry', 'the_geom', 'shape', 'poligono', 'geometria']
+            LOOP
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = tbl
+                      AND column_name = cand
+                ) THEN
+                    gcol := cand;
+                    EXIT;
+                END IF;
+            END LOOP;
         END IF;
 
         IF gcol IS NULL THEN
@@ -75,7 +101,7 @@ BEGIN
 
     RAISE EXCEPTION
         'Nenhuma geometria em dim_talhoes nem dim_talhao_florestal. '
-        'Rode sql/DIAGNOSTICO_GEOMETRIA.sql e confira geometry_columns.';
+        'Confira PostGIS (CREATE EXTENSION postgis) e rode sql/DIAGNOSTICO_GEOMETRIA.sql.';
 END
 $setup$;
 
@@ -86,7 +112,7 @@ RETURNS json
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, extensions
 AS $$
     SELECT coalesce(json_agg(row_to_json(t)), '[]'::json)
     FROM (
