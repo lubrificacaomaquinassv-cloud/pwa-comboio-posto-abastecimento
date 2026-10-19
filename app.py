@@ -32,9 +32,15 @@ from db.supabase_io import (
     ultimo_cobertura_por_talhao,
 )
 from mapa_adubacao import render_mapa_adubacao
-from db.secrets_helper import listar_db_urls, resolver_db_url
+from db.secrets_helper import listar_db_urls
+from db.supabase_rest import (
+    carregar_base_rest,
+    carregar_cobertura_rest,
+    carregar_talhoes_geom_rest,
+    get_supabase_client,
+)
 
-PAINEL_BUILD = "2026.10.19-somente-adubacao"
+PAINEL_BUILD = "2026.10.20-api-anon"
 
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
@@ -109,22 +115,29 @@ def get_engine():
 # Sidebar - fonte (Supabase ou planilhas)
 # -----------------------------------------------------------------
 _engine = get_engine()
+_sb_client = get_supabase_client()
+_modo_api = _engine is None and _sb_client is not None
+
 st.sidebar.title("🌳 Adubação Florestal")
 _usa_supabase = True
 arq_kml = None
 arq_cobertura = None
 arq_base = None
 
-if _engine is None:
-    st.error("Não conectou ao Supabase. Ajuste os **Secrets** (veja `SECRETS_STREAMLIT.txt`).")
-    if st.session_state.get("_supabase_erro"):
-        st.caption(f"Detalhe: {st.session_state['_supabase_erro']}")
+if _engine is None and _sb_client is None:
+    st.error("Supabase não configurado nos **Secrets**.")
+    st.markdown(
+        "**Igual aos outros painéis** (URL + chave — **não** precisa senha Postgres):\n\n"
+        "1. Rode no Supabase o SQL `sql/004_view_dim_talhoes_geojson.sql` (uma vez).\n"
+        "2. Cole os Secrets abaixo e **Save** → **Reboot app**."
+    )
     st.code(
-        'SUPABASE_URL = "https://SEU_REF.supabase.co"\n'
-        'SUPABASE_DB_PASSWORD = "senha do Postgres (Database settings)"\n'
-        'SUPABASE_GIS_TABLE = "dim_talhoes"',
+        'SUPABASE_URL = "https://azhpxhrwhegfysoeqmft.supabase.co"\n'
+        'SUPABASE_KEY = "sua chave anon ou service_role (Settings -> API)"',
         language="toml",
     )
+    if st.session_state.get("_supabase_erro"):
+        st.caption(f"(Tentativa Postgres opcional falhou: {st.session_state['_supabase_erro']})")
     with st.expander("Modo planilhas (só teste local)"):
         _usa_supabase = False
         arq_kml = st.file_uploader("KML", type=["kml"], key="dev_kml")
@@ -132,9 +145,12 @@ if _engine is None:
         arq_base = st.file_uploader("Base xlsx", type=["xlsx"], key="dev_base")
         if not (arq_kml and arq_cobertura and arq_base):
             st.stop()
+elif _modo_api:
+    st.sidebar.success("☁️ Supabase (API — URL + chave)")
+    st.sidebar.caption("Mapa via **vw_dim_talhoes_geojson** — sem KML e sem senha Postgres.")
 else:
-    st.sidebar.success("☁️ Supabase conectado")
-    st.sidebar.caption("Mapa GIS vem de **dim_talhoes** — **sem upload de KML**.")
+    st.sidebar.success("☁️ Supabase (Postgres)")
+    st.sidebar.caption("Mapa via **dim_talhoes** — sem upload de KML.")
 
 _kml_default = os.path.join(os.path.dirname(__file__), "dados", "fazenda_santa_virginia_completo.kml")
 
@@ -199,12 +215,17 @@ def _preferencia_gis() -> str | None:
 
 if _usa_supabase:
     try:
-        df_cobertura = carregar_cobertura(_engine)
-        df_base = carregar_base(_engine)
-        gdf_db, _fonte_gis = carregar_talhoes_geom(_engine, preferir_tabela=_preferencia_gis())
+        if _modo_api:
+            df_cobertura = carregar_cobertura_rest(_sb_client)
+            df_base = carregar_base_rest(_sb_client)
+            gdf_db, _fonte_gis = carregar_talhoes_geom_rest(_sb_client)
+        else:
+            df_cobertura = carregar_cobertura(_engine)
+            df_base = carregar_base(_engine)
+            gdf_db, _fonte_gis = carregar_talhoes_geom(_engine, preferir_tabela=_preferencia_gis())
         if gdf_db is not None and len(gdf_db):
             gdf_talhoes = gdf_db
-            st.sidebar.success(f"🗺️ GIS Supabase: **{_fonte_gis}** ({len(gdf_db)} polígonos)")
+            st.sidebar.success(f"🗺️ GIS: **{_fonte_gis}** ({len(gdf_db)} polígonos)")
         elif _bytes_kml():
             gdf_talhoes = _carregar_kml(_bytes_kml())
             _fonte_gis = "KML (fallback)"
