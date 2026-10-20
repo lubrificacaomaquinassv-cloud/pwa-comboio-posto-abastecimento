@@ -39,6 +39,11 @@ if ($url -match "^postgresql://") {
     $url = $url.Replace("postgresql://", "postgresql+psycopg://")
     Write-Host "Ajustado para postgresql+psycopg://" -ForegroundColor Green
 }
+if ($url -notmatch "postgres\.[a-zA-Z0-9]+@") {
+    Write-Host ""
+    Write-Host "AVISO: o usuario deve ser postgres.SEU_REF (ex: postgres.azhpxhrwhegfysoeqmft)" -ForegroundColor Yellow
+    Write-Host "Copie a Connection string inteira do Supabase e so troque a senha." -ForegroundColor Yellow
+}
 
 $lines = @(
     'SUPABASE_DB_URL = "' + $url + '"'

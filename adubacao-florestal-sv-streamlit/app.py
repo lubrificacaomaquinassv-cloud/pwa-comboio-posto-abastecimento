@@ -12,8 +12,6 @@ Fluxo:
   6) Botao opcional para gravar no Supabase (fonte oficial)
 """
 import os
-import re
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -25,6 +23,7 @@ from ingestion.pdf_retiro_parser import ler_pasta_pdfs_retiro
 from npk_calculator import aplicar_calculadora_no_df, calcular_npk_aplicado, dose_por_ha
 from painel_terceiros import carregar_terceiros, render_aba_terceiros
 from db.carga_supabase import sync_pasta_dados_painel
+from db.supabase_url import SECRETS_PATH, create_supabase_engine, ler_supabase_db_url
 from db.supabase_io import (
     carregar_base,
     carregar_cobertura,
@@ -95,27 +94,13 @@ if _logo_path:
 # -----------------------------------------------------------------
 # Conexao Supabase (opcional - so ativa se as credenciais existirem)
 # -----------------------------------------------------------------
-_APP_DIR = os.path.dirname(os.path.abspath(__file__))
-_SECRETS_PATH = os.path.join(_APP_DIR, ".streamlit", "secrets.toml")
+_SECRETS_PATH = str(SECRETS_PATH)
 
 
 def _ler_supabase_db_url() -> str | None:
-    """Lê URL do pooler: env, secrets.toml ao lado do app.py, depois st.secrets."""
-    env = os.environ.get("SUPABASE_DB_URL")
-    if env and str(env).strip():
-        return str(env).strip()
-    if os.path.isfile(_SECRETS_PATH):
-        try:
-            text = Path(_SECRETS_PATH).read_text(encoding="utf-8-sig")
-            for pattern in (
-                r'SUPABASE_DB_URL\s*=\s*"([^"]+)"',
-                r"SUPABASE_DB_URL\s*=\s*'([^']+)'",
-            ):
-                m = re.search(pattern, text)
-                if m and m.group(1).strip():
-                    return m.group(1).strip()
-        except OSError:
-            pass
+    url = ler_supabase_db_url()
+    if url:
+        return url
     try:
         v = st.secrets.get("SUPABASE_DB_URL")
         if v:
@@ -125,31 +110,10 @@ def _ler_supabase_db_url() -> str | None:
     return None
 
 
-def _normalizar_db_url(url: str) -> str | None:
-    url = str(url).strip()
-    if url.startswith("https://") or url.startswith("http://"):
-        return None
-    if url.startswith("postgresql://"):
-        url = url.replace("postgresql://", "postgresql+psycopg://", 1)
-    if not url.startswith("postgresql+"):
-        return None
-    return url
-
-
 def get_engine():
     """Cria a conexao SQLAlchemy com o Supabase via Transaction Pooler."""
     try:
-        from sqlalchemy import create_engine
-
-        raw = _ler_supabase_db_url()
-        if not raw:
-            return None
-        url = _normalizar_db_url(raw)
-        if not url:
-            return None
-        if not os.environ.get("SUPABASE_DB_URL"):
-            os.environ["SUPABASE_DB_URL"] = url
-        return create_engine(url)
+        return create_supabase_engine()
     except Exception:
         return None
 
@@ -377,8 +341,34 @@ if _usa_supabase:
         if not df_base.empty:
             df_base = aplicar_calculadora_no_df(df_base, "fertilizante", "kg_total", "area_plantada_ha")
     except Exception as e:
-        st.error(f"Erro ao ler Supabase: {e}")
-        st.exception(e)
+        err = str(e).lower()
+        if "password authentication failed" in err:
+            st.error("Senha do banco **incorreta** (Supabase recusou o login).")
+            st.markdown(
+                """
+**Como corrigir:**
+
+1. Supabase → **Project Settings** → **Database** → **Database password**  
+   (Se não lembrar: **Reset database password** e anote a senha nova.)
+
+2. **Connect** → **Transaction pooler** → copie de novo a **Connection string**.
+
+3. Troque `[YOUR-PASSWORD]` pela senha **do passo 1** (não use anon key nem URL https).
+
+4. Usuário deve ser **`postgres.azhpxhrwhegfysoeqmft`** (com ponto), não só `postgres`.
+
+5. Rode de novo:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File CONFIGURAR_PAINEL_LOCAL.ps1
+   ```
+   Depois **PARAR_E_ABRIR_PAINEL.bat**.
+
+Teste rápido: `powershell -File TESTAR_CONEXAO_SUPABASE.ps1` — deve aparecer **CONEXAO OK**.
+                """
+            )
+        else:
+            st.error(f"Erro ao ler Supabase: {e}")
+            st.exception(e)
         st.stop()
     if df_cobertura.empty:
         st.error("Nenhum dado de cobertura no Supabase nem em `dados/` no servidor.")
