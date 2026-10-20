@@ -518,17 +518,29 @@ gdf_validos = normalizar_coluna_talhao(
 df_cobertura = normalizar_coluna_talhao(df_cobertura)
 df_base = normalizar_coluna_talhao(df_base)
 
-_partes_depara = [df_cobertura[["talhao", "retiro"]]]
+_partes_depara: list[pd.DataFrame] = []
+if not df_cobertura.empty:
+    if "retiro" in df_cobertura.columns:
+        _partes_depara.append(df_cobertura[["talhao", "retiro"]])
+    else:
+        _partes_depara.append(df_cobertura[["talhao"]].assign(retiro=pd.NA))
 if not df_base.empty and "retiro" in df_base.columns:
     _partes_depara.append(df_base[["talhao", "retiro"]])
-de_para_planilhas = pd.concat(_partes_depara).drop_duplicates(subset="talhao", keep="first")
+de_para_planilhas = (
+    pd.concat(_partes_depara, ignore_index=True).drop_duplicates(subset="talhao", keep="first")
+    if _partes_depara
+    else pd.DataFrame(columns=["talhao", "retiro"])
+)
 
 de_para_retiro = pd.concat([
     de_para_pdf[["talhao", "retiro"]] if len(de_para_pdf) else pd.DataFrame(columns=["talhao", "retiro"]),
     de_para_planilhas,
 ]).drop_duplicates(subset="talhao", keep="first")
 
-gdf_validos = gdf_validos.merge(de_para_retiro, on="talhao", how="left")
+_gdf_sem_retiro = gdf_validos.drop(columns=["retiro"], errors="ignore")
+gdf_validos = _gdf_sem_retiro.merge(de_para_retiro, on="talhao", how="left")
+if "retiro" not in gdf_validos.columns:
+    gdf_validos["retiro"] = pd.NA
 
 area_cobertura_talhao = df_cobertura.groupby("talhao").agg(
     area_adubada_cobertura_ha=("area_total_ha", "sum"),
@@ -572,6 +584,17 @@ def status_execucao(pct):
 painel["status_cobertura"] = painel["pct_cobertura"].apply(status_execucao)
 painel["status_base"] = painel["pct_base"].apply(status_execucao)
 painel["alerta_sequencia"] = (painel["pct_cobertura"] > 0) & (painel["pct_base"] == 0)
+
+if "retiro" not in painel.columns:
+    painel["retiro"] = "Sem retiro"
+else:
+    painel["retiro"] = painel["retiro"].fillna("Sem retiro").astype(str)
+if "classe" not in painel.columns:
+    painel["classe"] = "—"
+else:
+    painel["classe"] = painel["classe"].fillna("—").astype(str)
+if "area_ha_kml" not in painel.columns:
+    painel["area_ha_kml"] = 0.0
 
 # -----------------------------------------------------------------
 # Sidebar - filtros
