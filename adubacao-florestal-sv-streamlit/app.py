@@ -435,10 +435,10 @@ gdf_validos = normalizar_coluna_talhao(
 df_cobertura = normalizar_coluna_talhao(df_cobertura)
 df_base = normalizar_coluna_talhao(df_base)
 
-de_para_planilhas = pd.concat([
-    df_cobertura[["talhao", "retiro"]],
-    df_base[["talhao", "retiro"]],
-]).drop_duplicates(subset="talhao", keep="first")
+_partes_depara = [df_cobertura[["talhao", "retiro"]]]
+if not df_base.empty and "retiro" in df_base.columns:
+    _partes_depara.append(df_base[["talhao", "retiro"]])
+de_para_planilhas = pd.concat(_partes_depara).drop_duplicates(subset="talhao", keep="first")
 
 de_para_retiro = pd.concat([
     de_para_pdf[["talhao", "retiro"]] if len(de_para_pdf) else pd.DataFrame(columns=["talhao", "retiro"]),
@@ -455,10 +455,13 @@ area_cobertura_talhao = df_cobertura.groupby("talhao").agg(
     k2o_kg_cobertura=("K2O_kg", "sum"),
 ).reset_index()
 
-area_base_feito = df_base[df_base["status"] == "Subsolado/Adubado"].groupby("talhao").agg(
-    area_subsolada_ha=("area_plantada_ha", "sum"),
-    kg_total_base=("kg_total", "sum"),
-).reset_index()
+if not df_base.empty and "status" in df_base.columns:
+    area_base_feito = df_base[df_base["status"] == "Subsolado/Adubado"].groupby("talhao").agg(
+        area_subsolada_ha=("area_plantada_ha", "sum"),
+        kg_total_base=("kg_total", "sum"),
+    ).reset_index()
+else:
+    area_base_feito = pd.DataFrame(columns=["talhao", "area_subsolada_ha", "kg_total_base"])
 
 painel = gdf_validos.merge(area_cobertura_talhao, on="talhao", how="left")
 painel = painel.merge(area_base_feito, on="talhao", how="left")
