@@ -1,0 +1,42 @@
+# Sincroniza planilhas versionadas em adubacao-florestal-sv-streamlit/dados/ → Supabase.
+# Configure o secret SUPABASE_DB_URL no repositório (Settings → Secrets → Actions).
+name: Sync DADOS_PAINEL → Supabase
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - painel-adubacao
+      - adubacao-florestal-sv
+      - "cursor/**"
+    paths:
+      - "adubacao-florestal-sv-streamlit/dados/**"
+      - "adubacao-florestal-sv-streamlit/scripts/sync_excel_to_supabase.py"
+      - "adubacao-florestal-sv-streamlit/ingestion/**"
+      - "adubacao-florestal-sv-streamlit/db/**"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependências
+        run: pip install -r adubacao-florestal-sv-streamlit/requirements.txt
+
+      - name: Carga Excel/KML → Supabase
+        working-directory: adubacao-florestal-sv-streamlit
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::Secret SUPABASE_DB_URL não configurado no GitHub."
+            exit 1
+          fi
+          python scripts/sync_excel_to_supabase.py --dados-dir dados

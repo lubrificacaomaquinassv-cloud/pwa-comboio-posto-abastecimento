@@ -3,13 +3,19 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from typing import Literal
 
 import folium
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import streamlit as st
+from folium.features import GeoJsonPopup, GeoJsonTooltip
+from shapely.geometry import Point
 from streamlit_folium import st_folium
+
+from ingestion.talhao_codigo import normalizar_codigo_talhao
 
 Camada = Literal["Satélite", "Terreno"]
 PintarPor = Literal["Cobertura", "Hectares", "Valor"]
@@ -46,6 +52,42 @@ def _fmt_data(val) -> str:
     return str(val)
 
 
+def painel_ficha_talhao_streamlit(ficha: dict | None) -> None:
+    """Ficha do talhão (Streamlit nativo — sempre visível abaixo do mapa)."""
+    st.markdown("---")
+    st.subheader("📋 Ficha do talhão")
+    if not ficha:
+        st.info(
+            "Use **Ver talhão** na barra lateral (esquerda) ou **Buscar talhão** à direita do mapa. "
+            "Também pode clicar **dentro da área colorida** do polígono."
+        )
+        return
+    t = ficha.get("talhao", "—")
+    st.markdown(f"**Talhão {t}** · Retiro: **{ficha.get('retiro') or '—'}** · Classe: **{ficha.get('classe') or '—'}**")
+    if not ficha.get("tem_lancamento_cobertura", True):
+        st.warning(
+            "Este talhão está no mapa (KML), mas **não há lançamento de cobertura** "
+            "no Supabase/planilha para este código."
+        )
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Área total (ha)", _fmt_num(ficha.get("area_total_ha")))
+    c2.metric("Floresta (ha)", _fmt_num(ficha.get("area_floresta_ha")))
+    c3.metric("Status cobertura", str(ficha.get("status_cobertura") or "—"))
+    pct = ficha.get("pct_cobertura")
+    c4.metric(
+        "% cobertura",
+        "—" if pct is None or (isinstance(pct, float) and np.isnan(pct)) else f"{float(pct):.1f}%",
+    )
+    c5, c6, c7, c8 = st.columns(4)
+    c5.metric("Fertilizante", str(ficha.get("fertilizante") or "—"))
+    c6.metric("Data", _fmt_data(ficha.get("data")))
+    c7.metric("Previsto (kg/ha)", _fmt_num(ficha.get("previsto_ha"), 0))
+    c8.metric("Realizado (kg/ha)", _fmt_num(ficha.get("realizado_ha")))
+    c9, c10 = st.columns(2)
+    c9.metric("Total gasto (kg)", _fmt_num(ficha.get("kg_total"), 0))
+    c10.metric("Operador", str(ficha.get("operador") or "—"))
+
+
 def html_ficha_lateral(ficha: dict | None) -> str:
     if not ficha:
         return """
@@ -55,13 +97,29 @@ def html_ficha_lateral(ficha: dict | None) -> str:
         </div>
         """
     t = html.escape(str(ficha.get("talhao", "")))
+    retiro = html.escape(str(ficha.get("retiro") or "—"))
+    classe = html.escape(str(ficha.get("classe") or "—"))
+    status = html.escape(str(ficha.get("status_cobertura") or "—"))
+    pct = ficha.get("pct_cobertura")
+    pct_txt = "—" if pct is None or (isinstance(pct, float) and np.isnan(pct)) else f"{float(pct):.1f}%"
+    sem_lanc = not ficha.get("tem_lancamento_cobertura", True)
+    aviso = (
+        '<p class="sv-ficha-hint">Sem lançamento de cobertura no painel/Supabase — '
+        "cadastro do mapa (KML). Carregue a planilha ou sincronize para ver fertilizante e doses.</p>"
+        if sem_lanc
+        else ""
+    )
     return f"""
     <div class="sv-map-panel sv-ficha">
         <div class="sv-map-panel-title">TALHÃO {t}</div>
         <div class="sv-ficha-grid">
             <span class="lbl">Nº talhão</span><span class="val">{t}</span>
+            <span class="lbl">Retiro</span><span class="val">{retiro}</span>
+            <span class="lbl">Classe</span><span class="val">{classe}</span>
             <span class="lbl">Total (há)</span><span class="val">{_fmt_num(ficha.get('area_total_ha'))}</span>
             <span class="lbl">Floresta (há)</span><span class="val">{_fmt_num(ficha.get('area_floresta_ha'))}</span>
+            <span class="lbl">Status cobertura</span><span class="val">{status}</span>
+            <span class="lbl">% cobertura</span><span class="val">{pct_txt}</span>
             <span class="lbl">Fertilizante</span><span class="val">{html.escape(str(ficha.get('fertilizante') or '—'))}</span>
             <span class="lbl">Data</span><span class="val">{_fmt_data(ficha.get('data'))}</span>
             <span class="lbl">Previsto (kg/há)</span><span class="val">{_fmt_num(ficha.get('previsto_ha'), 0)}</span>
@@ -69,6 +127,7 @@ def html_ficha_lateral(ficha: dict | None) -> str:
             <span class="lbl">Total gasto (kg)</span><span class="val">{_fmt_num(ficha.get('kg_total'), 0)}</span>
             <span class="lbl">Operador</span><span class="val">{html.escape(str(ficha.get('operador') or '—'))}</span>
         </div>
+        {aviso}
         <p class="sv-ficha-foot">Realizado = Total gasto ÷ Floresta (há)</p>
     </div>
     """
@@ -167,6 +226,17 @@ def _folium_mapa(
         control_scale=False,
     )
 
+    tooltip = GeoJsonTooltip(
+        fields=["talhao"],
+        aliases=["Talhão:"],
+        sticky=True,
+        labels=True,
+    )
+    popup = GeoJsonPopup(
+        fields=["talhao"],
+        aliases=["Talhão:"],
+        labels=True,
+    )
     folium.GeoJson(
         geojson_str,
         style_function=lambda feat: {
@@ -176,7 +246,8 @@ def _folium_mapa(
             "fillOpacity": 0.72,
         },
         highlight_function=lambda x: {"weight": 3, "color": "#4caf50", "fillOpacity": 0.85},
-        tooltip=folium.GeoJsonTooltip(fields=["talhao"], aliases=["Talhão:"]),
+        tooltip=tooltip,
+        popup=popup,
     ).add_to(mapa)
 
     if rotulos_json:
@@ -196,10 +267,102 @@ def _folium_mapa(
     return mapa
 
 
+_RX_TALHAO_TEXTO = re.compile(
+    r"(?:talh[aã]o|talhao)\s*:?\s*([0-9]+[A-Z0-9\-]*)",
+    re.IGNORECASE,
+)
+
+
+def _talhao_de_texto(val) -> str | None:
+    if val is None:
+        return None
+    if isinstance(val, dict):
+        for v in val.values():
+            t = _talhao_de_texto(v)
+            if t:
+                return t
+        return None
+    if isinstance(val, (list, tuple)):
+        for item in val:
+            t = _talhao_de_texto(item)
+            if t:
+                return t
+        return None
+    s = str(val).strip()
+    if not s:
+        return None
+    m = _RX_TALHAO_TEXTO.search(s)
+    if m:
+        return normalizar_codigo_talhao(m.group(1))
+    if re.fullmatch(r"[0-9]+[A-Z0-9\-]*", s, re.I):
+        return normalizar_codigo_talhao(s)
+    return None
+
+
+def _talhao_por_ponto(gdf: pd.DataFrame, lat: float, lng: float) -> str | None:
+    if gdf is None or gdf.empty or "geometry" not in gdf.columns:
+        return None
+    geo = gdf
+    if isinstance(geo, gpd.GeoDataFrame):
+        if geo.crs is None:
+            geo = geo.set_crs(4326)
+        elif geo.crs.to_epsg() != 4326:
+            geo = geo.to_crs(4326)
+    pt = gpd.GeoDataFrame(geometry=[Point(float(lng), float(lat))], crs="EPSG:4326")
+    try:
+        hits = gpd.sjoin(geo, pt, predicate="contains", how="inner")
+    except Exception:
+        pt_sh = Point(float(lng), float(lat))
+        mask = geo.geometry.contains(pt_sh)
+        if not mask.any():
+            mask = geo.geometry.intersects(pt_sh)
+        if not mask.any():
+            return None
+        hits = geo.loc[mask]
+    if hits.empty:
+        return None
+    if len(hits) > 1:
+        hits = hits.assign(_area=hits.geometry.area).sort_values("_area")
+    return normalizar_codigo_talhao(hits.iloc[0]["talhao"])
+
+
+def _talhao_do_clique(out: dict | None, gdf: pd.DataFrame) -> str | None:
+    """Resolve talhão: tooltip/popup do GeoJSON, properties ou ponto no polígono."""
+    if not out:
+        return None
+
+    for key in ("last_object_clicked_tooltip", "last_object_clicked_popup"):
+        t = _talhao_de_texto(out.get(key))
+        if t:
+            return t
+
+    obj = out.get("last_object_clicked")
+    if isinstance(obj, dict):
+        props = obj.get("properties") or {}
+        tal = props.get("talhao")
+        if tal:
+            return normalizar_codigo_talhao(tal)
+        lat = obj.get("lat")
+        lng = obj.get("lng")
+        if lat is not None and lng is not None:
+            t = _talhao_por_ponto(gdf, float(lat), float(lng))
+            if t:
+                return t
+
+    click = out.get("last_clicked") or out.get("last_object_clicked")
+    if isinstance(click, dict):
+        lat = click.get("lat")
+        lng = click.get("lng")
+        if lat is not None and lng is not None:
+            return _talhao_por_ponto(gdf, float(lat), float(lng))
+    return None
+
+
 def render_mapa_adubacao(
     gdf_mapa: pd.DataFrame,
     ficha: dict | None,
     key_suffix: str = "",
+    talhoes_lista: list[str] | None = None,
 ) -> str | None:
     """
     Renderiza mapa + painéis flutuantes. Retorna talhão clicado (se houver).
@@ -237,7 +400,7 @@ def render_mapa_adubacao(
             value=True,
             key=f"rotulos_talhao{key_suffix}",
         )
-        st.markdown(html_ficha_lateral(ficha), unsafe_allow_html=True)
+        ficha_slot = st.empty()
 
     gdf = gdf_mapa.copy()
     gdf["cor"] = _montar_cores(gdf, pintar)  # type: ignore[arg-type]
@@ -263,13 +426,42 @@ def render_mapa_adubacao(
             mapa,
             width=None,
             height=620,
-            returned_objects=["last_object_clicked"],
+            returned_objects=[
+                "last_object_clicked",
+                "last_clicked",
+                "last_object_clicked_tooltip",
+                "last_object_clicked_popup",
+                "last_object_clicked_count",
+            ],
             key=f"mapa_adubacao{key_suffix}",
             use_container_width=True,
         )
 
-    talhao_click = None
-    if out and out.get("last_object_clicked"):
-        props = out["last_object_clicked"].get("properties") or {}
-        talhao_click = props.get("talhao")
-    return talhao_click
+    clicado = _talhao_do_clique(out, gdf)
+
+    with col_ui:
+        lista = talhoes_lista or sorted(
+            gdf["talhao"].dropna().astype(str).unique().tolist(),
+            key=lambda x: (len(x), x),
+        )
+        _placeholder = "— escolha —"
+        opcoes = [_placeholder] + lista
+        atual = st.session_state.get("talhao_selecionado")
+        idx = opcoes.index(atual) if atual in opcoes else 0
+        st.markdown(
+            '<div class="sv-map-panel"><div class="sv-map-panel-title">BUSCAR TALHÃO</div></div>',
+            unsafe_allow_html=True,
+        )
+        escolhido = st.selectbox(
+            "Buscar talhão",
+            opcoes,
+            index=idx,
+            label_visibility="collapsed",
+            key=f"buscar_talhao{key_suffix}",
+        )
+        if escolhido != _placeholder and escolhido != atual:
+            st.session_state.talhao_selecionado = normalizar_codigo_talhao(escolhido)
+            st.rerun()
+
+    ficha_slot.markdown(html_ficha_lateral(ficha), unsafe_allow_html=True)
+    return clicado

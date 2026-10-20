@@ -23,19 +23,41 @@ def tabela_existe(engine: Engine, nome: str) -> bool:
     return row is not None
 
 
-def carregar_cobertura(engine: Engine) -> pd.DataFrame:
-    if not tabela_existe(engine, "fato_adubacao_cobertura"):
-        return pd.DataFrame()
-    df = pd.read_sql("SELECT * FROM fato_adubacao_cobertura ORDER BY talhao, data", engine)
+def _padronizar_df_cobertura(df: pd.DataFrame) -> pd.DataFrame:
+    from ingestion.talhao_codigo import normalizar_coluna_talhao
+
+    if df.empty:
+        return df
+    ren = {"n_kg": "N_kg", "p2o5_kg": "P2O5_kg", "k2o_kg": "K2O_kg"}
+    df = df.rename(columns={k: v for k, v in ren.items() if k in df.columns})
+    df = normalizar_coluna_talhao(df)
     if "data" in df.columns:
         df["data"] = pd.to_datetime(df["data"], errors="coerce")
     return df
 
 
-def carregar_base(engine: Engine) -> pd.DataFrame:
+def carregar_cobertura(engine: Engine, *, incluir_inativos: bool = False) -> pd.DataFrame:
+    if not tabela_existe(engine, "fato_adubacao_cobertura"):
+        return pd.DataFrame()
+    sql = "SELECT * FROM fato_adubacao_cobertura"
+    if not incluir_inativos and _coluna_existe(engine, "fato_adubacao_cobertura", "ativo"):
+        sql += " WHERE ativo IS DISTINCT FROM FALSE"
+    sql += " ORDER BY talhao, data"
+    df = pd.read_sql(sql, engine)
+    return _padronizar_df_cobertura(df)
+
+
+def carregar_base(engine: Engine, *, incluir_inativos: bool = False) -> pd.DataFrame:
     if not tabela_existe(engine, "fato_adubacao_base"):
         return pd.DataFrame()
-    return pd.read_sql("SELECT * FROM fato_adubacao_base ORDER BY talhao", engine)
+    from ingestion.talhao_codigo import normalizar_coluna_talhao
+
+    sql = "SELECT * FROM fato_adubacao_base"
+    if not incluir_inativos and _coluna_existe(engine, "fato_adubacao_base", "ativo"):
+        sql += " WHERE ativo IS DISTINCT FROM FALSE"
+    sql += " ORDER BY talhao"
+    df = pd.read_sql(sql, engine)
+    return normalizar_coluna_talhao(df)
 
 
 def _coluna_existe(engine: Engine, tabela: str, coluna: str, schema: str = "public") -> bool:
@@ -241,7 +263,13 @@ def gravar_talhoes(engine: Engine, gdf: gpd.GeoDataFrame) -> int:
     return len(rows)
 
 
-def gravar_cobertura(engine: Engine, df: pd.DataFrame, arquivo_origem: str | None = None) -> int:
+def gravar_cobertura(
+    engine: Engine,
+    df: pd.DataFrame,
+    arquivo_origem: str | None = None,
+    *,
+    projeto_carga: str = "sv_florestal_2026",
+) -> int:
     if df.empty:
         return 0
     cols = [
@@ -256,32 +284,62 @@ def gravar_cobertura(engine: Engine, df: pd.DataFrame, arquivo_origem: str | Non
     payload = payload[cols].copy()
     payload["talhao"] = payload["talhao"].astype(str).str.strip().str.upper()
     payload["arquivo_origem"] = arquivo_origem
+    tem_projeto = _coluna_existe(engine, "fato_adubacao_cobertura", "projeto_carga")
 
-    sql = text(
-        """
-        INSERT INTO fato_adubacao_cobertura (
-            talhao, retiro, area_total_ha, area_floresta_ha, fertilizante, data,
-            dose_recomendada_ha, dose_realizada_ha, kg_total, operador,
-            formula_npk, n_kg, p2o5_kg, k2o_kg, arquivo_origem, updated_at
-        ) VALUES (
-            :talhao, :retiro, :area_total_ha, :area_floresta_ha, :fertilizante, :data,
-            :dose_recomendada_ha, :dose_realizada_ha, :kg_total, :operador,
-            :formula_npk, :n_kg, :p2o5_kg, :k2o_kg, :arquivo_origem, now()
+    if tem_projeto:
+        sql = text(
+            """
+            INSERT INTO fato_adubacao_cobertura (
+                talhao, retiro, area_total_ha, area_floresta_ha, fertilizante, data,
+                dose_recomendada_ha, dose_realizada_ha, kg_total, operador,
+                formula_npk, n_kg, p2o5_kg, k2o_kg, arquivo_origem, projeto_carga, ativo, updated_at
+            ) VALUES (
+                :talhao, :retiro, :area_total_ha, :area_floresta_ha, :fertilizante, :data,
+                :dose_recomendada_ha, :dose_realizada_ha, :kg_total, :operador,
+                :formula_npk, :n_kg, :p2o5_kg, :k2o_kg, :arquivo_origem, :projeto_carga, TRUE, now()
+            )
+            ON CONFLICT ON CONSTRAINT uq_fato_cobertura_natural DO UPDATE SET
+                area_total_ha = EXCLUDED.area_total_ha,
+                area_floresta_ha = EXCLUDED.area_floresta_ha,
+                dose_recomendada_ha = EXCLUDED.dose_recomendada_ha,
+                dose_realizada_ha = EXCLUDED.dose_realizada_ha,
+                operador = EXCLUDED.operador,
+                formula_npk = EXCLUDED.formula_npk,
+                n_kg = EXCLUDED.n_kg,
+                p2o5_kg = EXCLUDED.p2o5_kg,
+                k2o_kg = EXCLUDED.k2o_kg,
+                arquivo_origem = EXCLUDED.arquivo_origem,
+                projeto_carga = EXCLUDED.projeto_carga,
+                ativo = TRUE,
+                updated_at = now()
+            """
         )
-        ON CONFLICT ON CONSTRAINT uq_fato_cobertura_natural DO UPDATE SET
-            area_total_ha = EXCLUDED.area_total_ha,
-            area_floresta_ha = EXCLUDED.area_floresta_ha,
-            dose_recomendada_ha = EXCLUDED.dose_recomendada_ha,
-            dose_realizada_ha = EXCLUDED.dose_realizada_ha,
-            operador = EXCLUDED.operador,
-            formula_npk = EXCLUDED.formula_npk,
-            n_kg = EXCLUDED.n_kg,
-            p2o5_kg = EXCLUDED.p2o5_kg,
-            k2o_kg = EXCLUDED.k2o_kg,
-            arquivo_origem = EXCLUDED.arquivo_origem,
-            updated_at = now()
-        """
-    )
+    else:
+        sql = text(
+            """
+            INSERT INTO fato_adubacao_cobertura (
+                talhao, retiro, area_total_ha, area_floresta_ha, fertilizante, data,
+                dose_recomendada_ha, dose_realizada_ha, kg_total, operador,
+                formula_npk, n_kg, p2o5_kg, k2o_kg, arquivo_origem, updated_at
+            ) VALUES (
+                :talhao, :retiro, :area_total_ha, :area_floresta_ha, :fertilizante, :data,
+                :dose_recomendada_ha, :dose_realizada_ha, :kg_total, :operador,
+                :formula_npk, :n_kg, :p2o5_kg, :k2o_kg, :arquivo_origem, now()
+            )
+            ON CONFLICT ON CONSTRAINT uq_fato_cobertura_natural DO UPDATE SET
+                area_total_ha = EXCLUDED.area_total_ha,
+                area_floresta_ha = EXCLUDED.area_floresta_ha,
+                dose_recomendada_ha = EXCLUDED.dose_recomendada_ha,
+                dose_realizada_ha = EXCLUDED.dose_realizada_ha,
+                operador = EXCLUDED.operador,
+                formula_npk = EXCLUDED.formula_npk,
+                n_kg = EXCLUDED.n_kg,
+                p2o5_kg = EXCLUDED.p2o5_kg,
+                k2o_kg = EXCLUDED.k2o_kg,
+                arquivo_origem = EXCLUDED.arquivo_origem,
+                updated_at = now()
+            """
+        )
     records = []
     for _, row in payload.iterrows():
         data_val = row["data"]
@@ -289,25 +347,26 @@ def gravar_cobertura(engine: Engine, df: pd.DataFrame, arquivo_origem: str | Non
             data_val = None
         elif hasattr(data_val, "date"):
             data_val = data_val.date()
-        records.append(
-            {
-                "talhao": row["talhao"],
-                "retiro": row["retiro"],
-                "area_total_ha": _num(row["area_total_ha"]),
-                "area_floresta_ha": _num(row["area_floresta_ha"]),
-                "fertilizante": row["fertilizante"],
-                "data": data_val,
-                "dose_recomendada_ha": _num(row["dose_recomendada_ha"]),
-                "dose_realizada_ha": _num(row["dose_realizada_ha"]),
-                "kg_total": _num(row["kg_total"]),
-                "operador": row["operador"],
-                "formula_npk": row.get("formula_npk"),
-                "n_kg": _num(row.get("N_kg")),
-                "p2o5_kg": _num(row.get("P2O5_kg")),
-                "k2o_kg": _num(row.get("K2O_kg")),
-                "arquivo_origem": arquivo_origem,
-            }
-        )
+        rec = {
+            "talhao": row["talhao"],
+            "retiro": row["retiro"],
+            "area_total_ha": _num(row["area_total_ha"]),
+            "area_floresta_ha": _num(row["area_floresta_ha"]),
+            "fertilizante": row["fertilizante"],
+            "data": data_val,
+            "dose_recomendada_ha": _num(row["dose_recomendada_ha"]),
+            "dose_realizada_ha": _num(row["dose_realizada_ha"]),
+            "kg_total": _num(row["kg_total"]),
+            "operador": row["operador"],
+            "formula_npk": row.get("formula_npk"),
+            "n_kg": _num(row.get("N_kg")),
+            "p2o5_kg": _num(row.get("P2O5_kg")),
+            "k2o_kg": _num(row.get("K2O_kg")),
+            "arquivo_origem": arquivo_origem,
+        }
+        if tem_projeto:
+            rec["projeto_carga"] = projeto_carga
+        records.append(rec)
     with engine.begin() as conn:
         conn.execute(sql, records)
     return len(records)
@@ -412,6 +471,45 @@ def ficha_talhao_dict(ult: pd.DataFrame, talhao: str) -> dict | None:
         "operador": r.get("operador"),
         "realizado_ha": realizado,
         "retiro": r.get("retiro"),
+        "tem_lancamento_cobertura": True,
+    }
+
+
+def ficha_talhao_merged(
+    ult: pd.DataFrame,
+    cadastro: pd.DataFrame,
+    talhao: str | None,
+) -> dict | None:
+    """Ficha lateral: lançamento de cobertura (se existir) ou cadastro do KML/painel."""
+    if not talhao:
+        return None
+    t = str(talhao).strip().upper()
+    if ult is not None and not ult.empty:
+        f = ficha_talhao_dict(ult, t)
+        if f:
+            return f
+    if cadastro is None or cadastro.empty:
+        return None
+    tal_col = cadastro["talhao"].astype(str).str.strip().str.upper()
+    row = cadastro.loc[tal_col == t]
+    if row.empty:
+        return None
+    r = row.iloc[0]
+    return {
+        "talhao": t,
+        "area_total_ha": r.get("area_ha_kml"),
+        "area_floresta_ha": r.get("area_floresta_ha") if pd.notna(r.get("area_floresta_ha")) else r.get("area_ha_kml"),
+        "fertilizante": None,
+        "data": None,
+        "previsto_ha": r.get("n_kg_ha_cobertura"),
+        "kg_total": None,
+        "operador": None,
+        "realizado_ha": None,
+        "retiro": r.get("retiro"),
+        "classe": r.get("classe"),
+        "status_cobertura": r.get("status_cobertura"),
+        "pct_cobertura": r.get("pct_cobertura"),
+        "tem_lancamento_cobertura": False,
     }
 
 
