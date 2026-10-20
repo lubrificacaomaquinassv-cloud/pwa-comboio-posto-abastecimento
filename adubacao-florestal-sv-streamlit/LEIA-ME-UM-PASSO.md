@@ -1,5 +1,13 @@
 # Um único caminho (sem menu escondido no Streamlit)
 
+## Atalho no Windows (duplo clique)
+
+1. Abra a pasta `pwa-comboio-posto-abastecimento\adubacao-florestal-sv-streamlit`
+2. Duplo clique em **`ATUALIZAR_E_ABRIR_PAINEL.bat`**
+
+Isso faz `git pull` e abre o painel no navegador (**localhost:8501**).  
+**Não digite `S` no PowerShell** — use o `.bat`.
+
 ## A) Subir planilhas → Supabase (PowerShell)
 
 Na pasta do projeto clonado:
