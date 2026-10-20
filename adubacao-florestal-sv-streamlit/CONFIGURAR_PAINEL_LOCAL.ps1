@@ -44,7 +44,8 @@ $lines = @(
     'SUPABASE_DB_URL = "' + $url + '"'
     'SUPABASE_GIS_TABLE = "dim_talhoes"'
 )
-Set-Content -Path $SecretsFile -Value $lines -Encoding UTF8
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText($SecretsFile, ($lines -join [Environment]::NewLine), $utf8NoBom)
 
 Write-Host ""
 Write-Host "Salvo em:" -ForegroundColor Green

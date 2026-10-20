@@ -12,6 +12,8 @@ Fluxo:
   6) Botao opcional para gravar no Supabase (fonte oficial)
 """
 import os
+import re
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -93,23 +95,60 @@ if _logo_path:
 # -----------------------------------------------------------------
 # Conexao Supabase (opcional - so ativa se as credenciais existirem)
 # -----------------------------------------------------------------
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+_SECRETS_PATH = os.path.join(_APP_DIR, ".streamlit", "secrets.toml")
+
+
+def _ler_supabase_db_url() -> str | None:
+    """Lê URL do pooler: env, secrets.toml ao lado do app.py, depois st.secrets."""
+    env = os.environ.get("SUPABASE_DB_URL")
+    if env and str(env).strip():
+        return str(env).strip()
+    if os.path.isfile(_SECRETS_PATH):
+        try:
+            text = Path(_SECRETS_PATH).read_text(encoding="utf-8-sig")
+            for pattern in (
+                r'SUPABASE_DB_URL\s*=\s*"([^"]+)"',
+                r"SUPABASE_DB_URL\s*=\s*'([^']+)'",
+            ):
+                m = re.search(pattern, text)
+                if m and m.group(1).strip():
+                    return m.group(1).strip()
+        except OSError:
+            pass
+    try:
+        v = st.secrets.get("SUPABASE_DB_URL")
+        if v:
+            return str(v).strip()
+    except Exception:
+        pass
+    return None
+
+
+def _normalizar_db_url(url: str) -> str | None:
+    url = str(url).strip()
+    if url.startswith("https://") or url.startswith("http://"):
+        return None
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+    if not url.startswith("postgresql+"):
+        return None
+    return url
+
+
 def get_engine():
-    """Cria a conexao SQLAlchemy com o Supabase via Transaction Pooler,
-    lendo as credenciais de st.secrets ou variaveis de ambiente.
-    Retorna None se as credenciais nao estiverem configuradas
-    (o painel continua funcionando 100% a partir dos uploads)."""
+    """Cria a conexao SQLAlchemy com o Supabase via Transaction Pooler."""
     try:
         from sqlalchemy import create_engine
-        url = st.secrets.get("SUPABASE_DB_URL") or os.environ.get("SUPABASE_DB_URL")
+
+        raw = _ler_supabase_db_url()
+        if not raw:
+            return None
+        url = _normalizar_db_url(raw)
         if not url:
             return None
-        url = str(url).strip()
-        if url.startswith("https://") or url.startswith("http://"):
-            return None
-        if url.startswith("postgresql://"):
-            url = url.replace("postgresql://", "postgresql+psycopg://", 1)
-        if not url.startswith("postgresql+"):
-            return None
+        if not os.environ.get("SUPABASE_DB_URL"):
+            os.environ["SUPABASE_DB_URL"] = url
         return create_engine(url)
     except Exception:
         return None
@@ -132,16 +171,28 @@ fonte_dados = st.sidebar.radio(
 )
 _usa_supabase = fonte_dados.startswith("☁️")
 
+_tem_secrets_arquivo = os.path.isfile(_SECRETS_PATH)
+_url_lida = _ler_supabase_db_url()
+
 if _usa_supabase and not _supabase_ok:
-    st.error(
-        "Modo Supabase selecionado, mas faltam credenciais. Configure **uma** das opções nos Secrets:\n\n"
-        "- `SUPABASE_DB_URL` (Transaction pooler), **ou**\n"
-        "- `SUPABASE_URL` + `SUPABASE_KEY` (de preferência **service_role** para ler `fato_adubacao_*`)."
-    )
+    if _tem_secrets_arquivo and _url_lida:
+        st.error(
+            "O arquivo **secrets.toml** foi encontrado, mas a conexão Postgres falhou. "
+            "Instale dependências (`pip install psycopg sqlalchemy`) e rode **PARAR_E_ABRIR_PAINEL.bat** "
+            "dentro da pasta `adubacao-florestal-sv-streamlit`."
+        )
+    elif _tem_secrets_arquivo:
+        st.error(
+            "Existe `.streamlit/secrets.toml`, mas **SUPABASE_DB_URL** não foi lido. "
+            "Rode **CONFIGURAR_PAINEL_LOCAL.ps1** de novo."
+        )
+    else:
+        st.error(
+            "Modo Supabase selecionado, mas faltam credenciais. Rode **CONFIGURAR_PAINEL_LOCAL.ps1** "
+            "ou crie `.streamlit/secrets.toml` com `SUPABASE_DB_URL` (Transaction pooler)."
+        )
     st.stop()
 
-_secrets_path = os.path.join(os.path.dirname(__file__), ".streamlit", "secrets.toml")
-_tem_secrets_arquivo = os.path.isfile(_secrets_path)
 if _tem_secrets_arquivo and _engine is None and not _rest_ok:
     st.sidebar.error(
         "Arquivo `secrets.toml` encontrado, mas o painel **nao conectou**. "
