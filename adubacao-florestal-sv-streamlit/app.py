@@ -144,12 +144,14 @@ _secrets_path = os.path.join(os.path.dirname(__file__), ".streamlit", "secrets.t
 _tem_secrets_arquivo = os.path.isfile(_secrets_path)
 if _tem_secrets_arquivo and _engine is None and not _rest_ok:
     st.sidebar.error(
-        "`.streamlit/secrets.toml` existe, mas a URL está errada. "
-        "Use **postgresql+psycopg://** (pooler), não https://. "
-        "Rode **CONFIGURAR_PAINEL_LOCAL.ps1** de novo."
+        "Arquivo `secrets.toml` encontrado, mas o painel **nao conectou**. "
+        "Feche o localhost e rode **PARAR_E_ABRIR_PAINEL.bat**. "
+        "Se persistir, rode **CONFIGURAR_PAINEL_LOCAL.ps1** de novo (URL postgresql+psycopg)."
     )
 elif _engine is not None:
     st.sidebar.success("Supabase Postgres (pooler) configurado.")
+elif not _tem_secrets_arquivo:
+    st.sidebar.warning("Sem `.streamlit/secrets.toml` — rode CONFIGURAR_PAINEL_LOCAL.ps1")
 elif not _usa_supabase and _tem_secrets_arquivo:
     st.sidebar.warning(
         "Você está em **Planilhas (Excel)**. Para mapa + adubação do banco, "
