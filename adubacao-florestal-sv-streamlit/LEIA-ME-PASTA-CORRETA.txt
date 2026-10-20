@@ -1,0 +1,23 @@
+PASTA CORRETA NO SEU PC
+========================
+
+O painel NOVO fica AQUI (dentro do repo PWA):
+
+  Desktop\pwa-comboio-posto-abastecimento\adubacao-florestal-sv-streamlit
+
+Arquivos para duplo clique (podem aparecer SEM ".bat" no Explorer):
+
+  ABRIR_PAINEL_ADUBACAO.bat
+  RODAR_PAINEL_LOCAL.bat
+  ATUALIZAR_E_ABRIR_PAINEL.bat
+
+NAO confunda com outra pasta sozinha na Area de Trabalho
+(ex.: copia "adubacao-florestal-sv" com app.py na raiz) — essa e outro projeto.
+
+Se nao ver ".bat": Explorer -> Exibir -> Extensoes de nomes de arquivos (marcar).
+
+URL do Supabase na configuracao:
+  ERRADO: https://xxxxx.supabase.co
+  CERTO:  postgresql+psycopg://postgres.REF:SENHA@....pooler.supabase.com:6543/postgres
+
+Rode de novo: CONFIGURAR_PAINEL_LOCAL.ps1 com a URL CERTA.

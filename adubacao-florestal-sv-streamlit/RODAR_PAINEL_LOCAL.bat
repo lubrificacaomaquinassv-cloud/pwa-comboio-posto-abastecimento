@@ -23,6 +23,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo Pasta: %CD%
 echo Abrindo o painel em http://localhost:8501
 echo Na barra lateral: Versao do painel 2026.10.20-mapa-ficha-v3
 echo Escolha "Ver talhao" na barra lateral esquerda.

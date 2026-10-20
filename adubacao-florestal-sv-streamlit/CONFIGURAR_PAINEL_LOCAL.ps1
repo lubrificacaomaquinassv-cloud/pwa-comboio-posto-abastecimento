@@ -9,9 +9,12 @@ New-Item -ItemType Directory -Force -Path $SecretsDir | Out-Null
 Write-Host ""
 Write-Host "=== Configurar painel local (Supabase) ===" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Cole a SUPABASE_DB_URL do Supabase:"
-Write-Host "  Project Settings - Database - Transaction pooler - URI"
+Write-Host "NAO cole https://....supabase.co" -ForegroundColor Red
+Write-Host ""
+Write-Host "Cole a URI do POOLER (Postgres):" -ForegroundColor Yellow
+Write-Host "  Supabase -> Project Settings -> Database -> Transaction pooler -> URI"
 Write-Host "  Troque postgresql:// por postgresql+psycopg://"
+Write-Host "  Exemplo: postgresql+psycopg://postgres.ABC123:senha@aws-1-sa-east-1.pooler.supabase.com:6543/postgres"
 Write-Host ""
 
 $url = Read-Host "SUPABASE_DB_URL"
@@ -20,6 +23,22 @@ if ([string]::IsNullOrWhiteSpace($url)) {
     exit 1
 }
 $url = $url.Trim().Replace('"', '')
+
+if ($url -match "^https?://") {
+    Write-Host ""
+    Write-Host "ERRO: Isso e URL do site (API), nao e conexao do banco." -ForegroundColor Red
+    Write-Host "Use a URI postgresql+psycopg://... do Transaction pooler." -ForegroundColor Yellow
+    exit 1
+}
+if ($url -notmatch "^postgresql") {
+    Write-Host ""
+    Write-Host "ERRO: A URL deve comecar com postgresql:// ou postgresql+psycopg://" -ForegroundColor Red
+    exit 1
+}
+if ($url -match "^postgresql://") {
+    $url = $url.Replace("postgresql://", "postgresql+psycopg://")
+    Write-Host "Ajustado para postgresql+psycopg://" -ForegroundColor Green
+}
 
 $lines = @(
     'SUPABASE_DB_URL = "' + $url + '"'
@@ -31,4 +50,9 @@ Write-Host ""
 Write-Host "Salvo em:" -ForegroundColor Green
 Write-Host "  $SecretsFile"
 Write-Host ""
-Write-Host "Agora duplo clique em RODAR_PAINEL_LOCAL.bat" -ForegroundColor Yellow
+Write-Host "Pasta deste script:" -ForegroundColor Cyan
+Write-Host "  $ScriptDir"
+Write-Host ""
+Write-Host "Duplo clique em:" -ForegroundColor Yellow
+Write-Host "  ABRIR_PAINEL_ADUBACAO.bat"
+Write-Host "  (ou RODAR_PAINEL_LOCAL.bat na mesma pasta)"
