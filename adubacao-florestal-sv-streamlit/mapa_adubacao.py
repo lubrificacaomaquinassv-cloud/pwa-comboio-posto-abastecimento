@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import html
-import json
 import re
 from typing import Literal
 
@@ -11,7 +10,6 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import streamlit as st
-from folium.features import GeoJsonPopup, GeoJsonTooltip
 from shapely.geometry import Point
 from streamlit_folium import st_folium
 
@@ -231,14 +229,55 @@ def _montar_cores(gdf: pd.DataFrame, pintar: PintarPor) -> pd.Series:
     return _cor_escala(gdf["kg_total_map"], paleta)
 
 
-@st.cache_resource(show_spinner="Montando camadas do mapa…")
+def _coords_folium(geom) -> list:
+    """Converte geometria shapely em lista de anéis [[lat, lon], ...] para folium.Polygon."""
+    if geom is None or geom.is_empty:
+        return []
+    gtype = geom.geom_type
+    if gtype == "Polygon":
+        ext = [[float(y), float(x)] for x, y in geom.exterior.coords]
+        return [ext]
+    if gtype == "MultiPolygon":
+        rings: list = []
+        for poly in geom.geoms:
+            if poly.is_empty:
+                continue
+            ext = [[float(y), float(x)] for x, y in poly.exterior.coords]
+            rings.append(ext)
+        return rings
+    return []
+
+
+def _adicionar_poligono_talhao(mapa: folium.Map, geom, cor: str, talhao: str) -> None:
+    """Camadas folium sem lambdas — compatível com st_folium (JSON serializável)."""
+    rings = _coords_folium(geom)
+    if not rings:
+        return
+    tip = f"Talhão: {talhao}"
+    pop = folium.Popup(tip, max_width=220)
+    opts = dict(
+        color="#1a1a1a",
+        weight=1,
+        fill=True,
+        fill_color=cor or COR_SEM_DADO,
+        fill_opacity=0.72,
+        tooltip=tip,
+        popup=pop,
+    )
+    if len(rings) == 1:
+        folium.Polygon(locations=rings[0], **opts).add_to(mapa)
+    else:
+        for ring in rings:
+            folium.Polygon(locations=ring, **opts).add_to(mapa)
+
+
 def _folium_mapa(
-    geojson_str: str,
+    gdf: gpd.GeoDataFrame,
     centro_lat: float,
     centro_lon: float,
     camada: Camada,
-    rotulos_json: str | None,
-):
+    mostrar_rotulos: bool,
+) -> folium.Map:
     tiles = TILES_TERRENO if camada == "Terreno" else TILES_SATELITE
     mapa = folium.Map(
         location=[centro_lat, centro_lon],
@@ -248,43 +287,23 @@ def _folium_mapa(
         control_scale=False,
     )
 
-    tooltip = GeoJsonTooltip(
-        fields=["talhao"],
-        aliases=["Talhão:"],
-        sticky=True,
-        labels=True,
-    )
-    popup = GeoJsonPopup(
-        fields=["talhao"],
-        aliases=["Talhão:"],
-        labels=True,
-    )
-    folium.GeoJson(
-        geojson_str,
-        style_function=lambda feat: {
-            "fillColor": feat["properties"].get("cor", COR_SEM_DADO),
-            "color": "#1a1a1a",
-            "weight": 1,
-            "fillOpacity": 0.72,
-        },
-        highlight_function=lambda x: {"weight": 3, "color": "#4caf50", "fillOpacity": 0.85},
-        tooltip=tooltip,
-        popup=popup,
-    ).add_to(mapa)
-
-    if rotulos_json:
-        folium.GeoJson(
-            rotulos_json,
-            name="Rótulos",
-            point_to_layer=lambda feat, latlng: folium.Marker(
-                latlng,
+    for _, row in gdf.iterrows():
+        tal = str(row.get("talhao", ""))
+        cor = str(row.get("cor") or COR_SEM_DADO)
+        _adicionar_poligono_talhao(mapa, row.geometry, cor, tal)
+        if mostrar_rotulos and row.geometry is not None and not row.geometry.is_empty:
+            c = row.geometry.centroid
+            folium.Marker(
+                location=[float(c.y), float(c.x)],
                 icon=folium.DivIcon(
                     icon_size=(40, 14),
                     icon_anchor=(20, 7),
-                    html=f'<div style="font-size:10px;font-weight:700;color:#fff;text-shadow:1px 1px 2px #000;">{feat["properties"]["talhao"]}</div>',
+                    html=(
+                        f'<div style="font-size:10px;font-weight:700;color:#fff;'
+                        f'text-shadow:1px 1px 2px #000;">{html.escape(tal)}</div>'
+                    ),
                 ),
-            ),
-        ).add_to(mapa)
+            ).add_to(mapa)
 
     return mapa
 
@@ -430,18 +449,7 @@ def render_mapa_adubacao(
     centro_lat = float(gdf.geometry.centroid.y.mean())
     centro_lon = float(gdf.geometry.centroid.x.mean())
 
-    props_cols = ["talhao", "cor"]
-    geojson_str = json.dumps(gdf[props_cols + ["geometry"]].__geo_interface__)
-
-    rotulos_json = None
-    if rotulos:
-        pts = []
-        for _, row in gdf.iterrows():
-            c = row.geometry.centroid
-            pts.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": [c.x, c.y]}, "properties": {"talhao": str(row["talhao"])}})
-        rotulos_json = json.dumps({"type": "FeatureCollection", "features": pts})
-
-    mapa = _folium_mapa(geojson_str, centro_lat, centro_lon, camada, rotulos_json)
+    mapa = _folium_mapa(gdf, centro_lat, centro_lon, camada, rotulos)
 
     with col_map:
         out = st_folium(

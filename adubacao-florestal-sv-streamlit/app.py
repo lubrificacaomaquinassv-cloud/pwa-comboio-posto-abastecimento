@@ -42,7 +42,45 @@ from ingestion.dados_painel import descobrir_arquivos_dados_painel
 from ingestion.talhao_codigo import normalizar_coluna_talhao
 from mapa_adubacao import painel_ficha_talhao_streamlit, render_mapa_adubacao
 
-PAINEL_BUILD = "2026.10.20-adubacao-only-v4"
+PAINEL_BUILD = "2026.10.20-mapa-kpi-v5"
+
+# Valores de "retiro" que vêm de abas/nomes de planilha — não usar como filtro de fazenda
+_RETIRO_PLANILHA_IGNORAR = frozenset(
+    s.lower()
+    for s in (
+        "Adubação",
+        "Adubacao",
+        "Dados",
+        "Conceição",
+        "Conceicao",
+        "Cobertura",
+        "Base",
+        "Planilha",
+        "Sheet",
+    )
+)
+
+
+def _retiro_planilha_valido(val) -> bool:
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return False
+    s = str(val).strip()
+    if not s:
+        return False
+    return s.lower() not in _RETIRO_PLANILHA_IGNORAR
+
+
+def _pct_area_aplicada(df: pd.DataFrame, col_area_aplicada: str) -> float | None:
+    """% global = soma(min(área aplicada, área mapa)) / soma(área mapa), por talhão."""
+    if df.empty or "area_ha_kml" not in df.columns:
+        return None
+    area_mapa = pd.to_numeric(df["area_ha_kml"], errors="coerce").fillna(0)
+    area_aplic = pd.to_numeric(df[col_area_aplicada], errors="coerce").fillna(0)
+    total_mapa = float(area_mapa.sum())
+    if total_mapa <= 0:
+        return None
+    eff = np.minimum(area_aplic, area_mapa)
+    return float(eff.sum() / total_mapa * 100)
 
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
@@ -492,10 +530,26 @@ de_para_planilhas = (
     else pd.DataFrame(columns=["talhao", "retiro"])
 )
 
-de_para_retiro = pd.concat([
-    de_para_pdf[["talhao", "retiro"]] if len(de_para_pdf) else pd.DataFrame(columns=["talhao", "retiro"]),
-    de_para_planilhas,
-]).drop_duplicates(subset="talhao", keep="first")
+_partes_retiro: list[pd.DataFrame] = []
+if len(de_para_pdf):
+    _partes_retiro.append(de_para_pdf[["talhao", "retiro"]])
+if "retiro" in gdf_talhoes.columns:
+    _gis_ret = normalizar_coluna_talhao(
+        gdf_talhoes.loc[gdf_talhoes["talhao"].notna(), ["talhao", "retiro"]].copy()
+    )
+    _gis_ret = _gis_ret[_gis_ret["retiro"].notna() & (_gis_ret["retiro"].astype(str).str.strip() != "")]
+    if not _gis_ret.empty:
+        _partes_retiro.append(_gis_ret)
+if not de_para_planilhas.empty:
+    _plan = de_para_planilhas.copy()
+    _plan = _plan[_plan["retiro"].apply(_retiro_planilha_valido)]
+    if not _plan.empty:
+        _partes_retiro.append(_plan)
+de_para_retiro = (
+    pd.concat(_partes_retiro, ignore_index=True).drop_duplicates(subset="talhao", keep="first")
+    if _partes_retiro
+    else pd.DataFrame(columns=["talhao", "retiro"])
+)
 
 _gdf_sem_retiro = gdf_validos.drop(columns=["retiro"], errors="ignore")
 gdf_validos = _gdf_sem_retiro.merge(de_para_retiro, on="talhao", how="left")
@@ -525,8 +579,15 @@ for col in ["area_adubada_cobertura_ha", "kg_total_cobertura", "n_kg_cobertura",
             "p2o5_kg_cobertura", "k2o_kg_cobertura", "area_subsolada_ha", "kg_total_base"]:
     painel[col] = painel[col].fillna(0)
 
-painel["pct_cobertura"] = (painel["area_adubada_cobertura_ha"] / painel["area_ha_kml"] * 100).round(1)
-painel["pct_base"] = (painel["area_subsolada_ha"] / painel["area_ha_kml"] * 100).round(1)
+_area_mapa = painel["area_ha_kml"].replace(0, np.nan)
+painel["pct_cobertura"] = (
+    np.minimum(painel["area_adubada_cobertura_ha"], painel["area_ha_kml"])
+    / _area_mapa
+    * 100
+).round(1)
+painel["pct_base"] = (
+    np.minimum(painel["area_subsolada_ha"], painel["area_ha_kml"]) / _area_mapa * 100
+).round(1)
 
 # divisao segura (evita divisao por zero sem usar pd.NA, que quebra .round())
 painel["n_kg_ha_cobertura"] = painel["n_kg_cobertura"] / painel["area_adubada_cobertura_ha"].replace(0, np.nan)
@@ -612,12 +673,10 @@ st.markdown(
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Área mapeada (filtro)", f"{painel_f['area_ha_kml'].sum():,.0f} ha")
-if painel_f["area_ha_kml"].sum() > 0:
-    col2.metric("% Cobertura aplicada", f"{(painel_f['area_adubada_cobertura_ha'].sum() / painel_f['area_ha_kml'].sum() * 100):.1f}%")
-    col3.metric("% Base/Subsolagem", f"{(painel_f['area_subsolada_ha'].sum() / painel_f['area_ha_kml'].sum() * 100):.1f}%")
-else:
-    col2.metric("% Cobertura aplicada", "—")
-    col3.metric("% Base/Subsolagem", "—")
+_pct_cob = _pct_area_aplicada(painel_f, "area_adubada_cobertura_ha")
+_pct_base = _pct_area_aplicada(painel_f, "area_subsolada_ha")
+col2.metric("% Cobertura aplicada", f"{_pct_cob:.1f}%" if _pct_cob is not None else "—")
+col3.metric("% Base/Subsolagem", f"{_pct_base:.1f}%" if _pct_base is not None else "—")
 col4.metric("Talhões com alerta de sequência", int(painel_f["alerta_sequencia"].sum()))
 
 _cob_talhoes = set(df_cobertura["talhao"].dropna().unique()) if not df_cobertura.empty else set()
@@ -714,7 +773,14 @@ with aba_cobertura:
         area_adubada_ha=("area_adubada_cobertura_ha", "sum"),
         talhoes_nao_iniciados=("status_cobertura", lambda s: (s == "Não iniciado").sum()),
     ).reset_index()
-    resumo_retiro_cob["pct_execucao"] = (resumo_retiro_cob["area_adubada_ha"] / resumo_retiro_cob["area_total_ha"] * 100).round(1)
+    resumo_retiro_cob["pct_execucao"] = resumo_retiro_cob.apply(
+        lambda r: (
+            min(float(r["area_adubada_ha"]), float(r["area_total_ha"])) / float(r["area_total_ha"]) * 100
+            if r["area_total_ha"] and float(r["area_total_ha"]) > 0
+            else 0.0
+        ),
+        axis=1,
+    ).round(1)
     resumo_retiro_cob = resumo_retiro_cob.sort_values("pct_execucao")
 
     st.subheader("Execução por retiro (Cobertura)")
@@ -736,7 +802,14 @@ with aba_base:
         area_total_ha=("area_ha_kml", "sum"),
         area_subsolada_ha=("area_subsolada_ha", "sum"),
     ).reset_index()
-    resumo_retiro_base["pct_execucao"] = (resumo_retiro_base["area_subsolada_ha"] / resumo_retiro_base["area_total_ha"] * 100).round(1)
+    resumo_retiro_base["pct_execucao"] = resumo_retiro_base.apply(
+        lambda r: (
+            min(float(r["area_subsolada_ha"]), float(r["area_total_ha"])) / float(r["area_total_ha"]) * 100
+            if r["area_total_ha"] and float(r["area_total_ha"]) > 0
+            else 0.0
+        ),
+        axis=1,
+    ).round(1)
     resumo_retiro_base = resumo_retiro_base.sort_values("pct_execucao")
 
     st.subheader("Execução por retiro (Base/Subsolagem)")
