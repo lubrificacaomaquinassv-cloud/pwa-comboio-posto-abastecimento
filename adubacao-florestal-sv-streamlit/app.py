@@ -726,6 +726,14 @@ with aba_mapa:
             on="talhao",
             how="left",
         )
+        if isinstance(painel_f, gpd.GeoDataFrame):
+            gdf_mapa = gpd.GeoDataFrame(
+                gdf_mapa,
+                geometry=painel_f.geometry.name,
+                crs=painel_f.crs,
+            )
+            if gdf_mapa.geometry.name != "geometry":
+                gdf_mapa = gdf_mapa.rename_geometry("geometry")
         gdf_mapa["kg_total_map"] = gdf_mapa["kg_total_map"].fillna(0)
 
         ficha = ficha_talhao_merged(ult_cob, painel_f, st.session_state.talhao_selecionado)

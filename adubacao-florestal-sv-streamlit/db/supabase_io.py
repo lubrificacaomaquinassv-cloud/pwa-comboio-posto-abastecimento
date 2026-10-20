@@ -113,6 +113,8 @@ def _read_postgis_talhoes(
     if gdf is None or gdf.empty:
         return None
     gdf = gdf.set_crs(4326, allow_override=True)
+    if gdf.geometry.name != "geometry":
+        gdf = gdf.rename_geometry("geometry")
     if "talhao" in gdf.columns:
         gdf["talhao"] = gdf["talhao"].astype(str).str.strip().str.upper()
         gdf = gdf[gdf["talhao"].notna() & (gdf["talhao"] != "")].copy()

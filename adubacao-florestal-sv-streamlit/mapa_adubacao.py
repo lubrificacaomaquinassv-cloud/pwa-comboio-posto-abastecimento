@@ -35,6 +35,28 @@ COR_COMPLETO = "#2e7d32"
 COR_SEM_DADO = "#3d4a5c"
 
 
+def _gdf_para_mapa(gdf_mapa: pd.DataFrame) -> gpd.GeoDataFrame:
+    """Garante GeoDataFrame com coluna ativa `geometry` (PostGIS pode vir como geom/geometria)."""
+    if isinstance(gdf_mapa, gpd.GeoDataFrame):
+        g = gdf_mapa.copy()
+        if g.geometry.name != "geometry":
+            g = g.rename_geometry("geometry")
+        if g.crs is None:
+            g = g.set_crs(4326)
+        return g
+    g = gdf_mapa.copy()
+    for col in ("geometry", "geom", "geometria"):
+        if col in g.columns:
+            out = gpd.GeoDataFrame(g, geometry=col, crs="EPSG:4326")
+            if out.geometry.name != "geometry":
+                out = out.rename_geometry("geometry")
+            return out
+    raise KeyError(
+        "Nenhuma coluna de geometria (geometry/geom/geometria). "
+        "Verifique se o mapa veio do Supabase ou KML."
+    )
+
+
 def _fmt_num(val, casas: int = 2) -> str:
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return "—"
@@ -402,7 +424,7 @@ def render_mapa_adubacao(
         )
         ficha_slot = st.empty()
 
-    gdf = gdf_mapa.copy()
+    gdf = _gdf_para_mapa(gdf_mapa)
     gdf["cor"] = _montar_cores(gdf, pintar)  # type: ignore[arg-type]
 
     centro_lat = float(gdf.geometry.centroid.y.mean())
