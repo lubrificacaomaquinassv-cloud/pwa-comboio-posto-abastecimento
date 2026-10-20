@@ -40,9 +40,9 @@ from db.supabase_rest import (
 )
 from ingestion.dados_painel import descobrir_arquivos_dados_painel
 from ingestion.talhao_codigo import normalizar_coluna_talhao
-from mapa_adubacao import render_mapa_adubacao
+from mapa_adubacao import painel_ficha_talhao_streamlit, render_mapa_adubacao
 
-PAINEL_BUILD = "2026.10.20-dados-adubacao-final"
+PAINEL_BUILD = "2026.10.20-mapa-ficha-v3"
 
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
@@ -504,6 +504,37 @@ filtro_classe = st.sidebar.multiselect(
 
 painel_f = painel[painel["retiro"].isin(filtro_retiro) & painel["classe"].isin(filtro_classe)]
 
+if "talhao_selecionado" not in st.session_state:
+    st.session_state.talhao_selecionado = None
+
+# -----------------------------------------------------------------
+# Sidebar — escolher talhão (funciona mesmo se o clique no mapa falhar)
+# -----------------------------------------------------------------
+st.sidebar.markdown("---")
+st.sidebar.subheader("📍 Ver talhão")
+_lista_talhoes_sidebar = sorted(
+    painel_f["talhao"].dropna().astype(str).unique().tolist(),
+    key=lambda x: (len(x), x),
+) if not painel_f.empty else []
+_op_sidebar = ["(nenhum)"] + _lista_talhoes_sidebar
+_atual_sidebar = st.session_state.get("talhao_selecionado")
+_idx_sidebar = _op_sidebar.index(_atual_sidebar) if _atual_sidebar in _op_sidebar else 0
+_esc_sidebar = st.sidebar.selectbox(
+    "Número do talhão",
+    _op_sidebar,
+    index=_idx_sidebar,
+    key="sidebar_ver_talhao",
+)
+if _esc_sidebar == "(nenhum)":
+    if st.session_state.talhao_selecionado is not None:
+        st.session_state.talhao_selecionado = None
+        st.rerun()
+elif _esc_sidebar != st.session_state.talhao_selecionado:
+    st.session_state.talhao_selecionado = str(_esc_sidebar).strip().upper()
+    st.rerun()
+
+st.sidebar.caption(f"Versão do painel: **{PAINEL_BUILD}**")
+
 # -----------------------------------------------------------------
 # Corpo principal
 # -----------------------------------------------------------------
@@ -591,9 +622,6 @@ with aba_mapa:
         )
         gdf_mapa["kg_total_map"] = gdf_mapa["kg_total_map"].fillna(0)
 
-        if "talhao_selecionado" not in st.session_state:
-            st.session_state.talhao_selecionado = None
-
         ficha = ficha_talhao_merged(ult_cob, painel_f, st.session_state.talhao_selecionado)
         try:
             clicado = render_mapa_adubacao(
@@ -608,6 +636,8 @@ with aba_mapa:
             if clicado and clicado != st.session_state.talhao_selecionado:
                 st.session_state.talhao_selecionado = clicado
                 st.rerun()
+            ficha = ficha_talhao_merged(ult_cob, painel_f, st.session_state.talhao_selecionado)
+            painel_ficha_talhao_streamlit(ficha)
         except Exception as e:
             st.error(f"Erro ao renderizar o mapa: {e}")
             st.exception(e)

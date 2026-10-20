@@ -52,6 +52,42 @@ def _fmt_data(val) -> str:
     return str(val)
 
 
+def painel_ficha_talhao_streamlit(ficha: dict | None) -> None:
+    """Ficha do talhão (Streamlit nativo — sempre visível abaixo do mapa)."""
+    st.markdown("---")
+    st.subheader("📋 Ficha do talhão")
+    if not ficha:
+        st.info(
+            "Use **Ver talhão** na barra lateral (esquerda) ou **Buscar talhão** à direita do mapa. "
+            "Também pode clicar **dentro da área colorida** do polígono."
+        )
+        return
+    t = ficha.get("talhao", "—")
+    st.markdown(f"**Talhão {t}** · Retiro: **{ficha.get('retiro') or '—'}** · Classe: **{ficha.get('classe') or '—'}**")
+    if not ficha.get("tem_lancamento_cobertura", True):
+        st.warning(
+            "Este talhão está no mapa (KML), mas **não há lançamento de cobertura** "
+            "no Supabase/planilha para este código."
+        )
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Área total (ha)", _fmt_num(ficha.get("area_total_ha")))
+    c2.metric("Floresta (ha)", _fmt_num(ficha.get("area_floresta_ha")))
+    c3.metric("Status cobertura", str(ficha.get("status_cobertura") or "—"))
+    pct = ficha.get("pct_cobertura")
+    c4.metric(
+        "% cobertura",
+        "—" if pct is None or (isinstance(pct, float) and np.isnan(pct)) else f"{float(pct):.1f}%",
+    )
+    c5, c6, c7, c8 = st.columns(4)
+    c5.metric("Fertilizante", str(ficha.get("fertilizante") or "—"))
+    c6.metric("Data", _fmt_data(ficha.get("data")))
+    c7.metric("Previsto (kg/ha)", _fmt_num(ficha.get("previsto_ha"), 0))
+    c8.metric("Realizado (kg/ha)", _fmt_num(ficha.get("realizado_ha")))
+    c9, c10 = st.columns(2)
+    c9.metric("Total gasto (kg)", _fmt_num(ficha.get("kg_total"), 0))
+    c10.metric("Operador", str(ficha.get("operador") or "—"))
+
+
 def html_ficha_lateral(ficha: dict | None) -> str:
     if not ficha:
         return """
@@ -404,10 +440,12 @@ def render_mapa_adubacao(
     clicado = _talhao_do_clique(out, gdf)
 
     with col_ui:
-        opcoes = talhoes_lista or sorted(
+        lista = talhoes_lista or sorted(
             gdf["talhao"].dropna().astype(str).unique().tolist(),
             key=lambda x: (len(x), x),
         )
+        _placeholder = "— escolha —"
+        opcoes = [_placeholder] + lista
         atual = st.session_state.get("talhao_selecionado")
         idx = opcoes.index(atual) if atual in opcoes else 0
         st.markdown(
@@ -415,14 +453,14 @@ def render_mapa_adubacao(
             unsafe_allow_html=True,
         )
         escolhido = st.selectbox(
-            "buscar_talhao",
+            "Buscar talhão",
             opcoes,
             index=idx,
             label_visibility="collapsed",
             key=f"buscar_talhao{key_suffix}",
         )
-        if escolhido and escolhido != atual:
-            st.session_state.talhao_selecionado = str(escolhido).strip().upper()
+        if escolhido != _placeholder and escolhido != atual:
+            st.session_state.talhao_selecionado = normalizar_codigo_talhao(escolhido)
             st.rerun()
 
     ficha_slot.markdown(html_ficha_lateral(ficha), unsafe_allow_html=True)
