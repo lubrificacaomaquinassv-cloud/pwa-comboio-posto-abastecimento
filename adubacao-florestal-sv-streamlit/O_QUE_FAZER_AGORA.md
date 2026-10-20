@@ -8,6 +8,18 @@ A pasta correta no seu PC:
 
 ---
 
+## Passo 0 — Entender o que vai pro banco
+
+| O quê na pasta | Onde grava | Quem lê |
+|----------------|------------|---------|
+| `.xlsx` com abas **Talhão** (Cobertura) | `fato_adubacao_cobertura` | Streamlit + Lovable (`vw_api_adubacao_cobertura`) |
+| `.xlsx` com aba **Horto** (Subsolagem) | `fato_adubacao_base` | Streamlit + Lovable (`vw_api_adubacao_base`) |
+| `.kml` | `dim_talhao_florestal` (opcional) | Mapa Streamlit / join Lovable |
+
+**Um único Supabase** — mesma calculadora NPK no Python na carga; Lovable lê as **views** do `sql/005_views_lovable_adubacao.sql`.
+
+---
+
 ## Passo 1 — Conferir planilhas (SEM banco, não falha por senha)
 
 1. Abra **PowerShell**.
@@ -25,7 +37,7 @@ cd C:\Users\hmauricio\Desktop\pwa-adubacao\adubacao-florestal-sv-streamlit
 python scripts/conferir_planilhas_local.py "C:\Users\hmauricio\Desktop\DADOS_PAINEL"
 ```
 
-**Deve aparecer:** quantidade de lançamentos e **“Talhões em COMUM” > 0**.  
+**Deve listar cada `.xlsx`** com tipo (`cobertura_sv`, `base_subsolagem_sv`, etc.), linhas e talhões, mais **“Talhões em COMUM” > 0** com o KML.  
 Se der **0 em comum**, o painel continuará 0% — problema nos arquivos, não no Streamlit.
 
 ---
@@ -33,8 +45,9 @@ Se der **0 em comum**, o painel continuará 0% — problema nos arquivos, não n
 ## Passo 2 — SQL no Supabase (site, uma vez)
 
 1. https://supabase.com → seu projeto → **SQL Editor**
-2. Cole e execute o arquivo **`sql/003_schema_adubacao_florestal.sql`**
-3. (Opcional, projeto antigo no banco) **`sql/004_controle_projeto_legado.sql`**
+2. **`sql/003_schema_adubacao_florestal.sql`**
+3. **`sql/004_controle_projeto_legado.sql`** (projeto anterior no banco)
+4. **`sql/005_views_lovable_adubacao.sql`** (Lovable lê as mesmas adubações)
 
 ---
 
