@@ -368,24 +368,38 @@ if not _modo_completo:
             '<p>Fazenda Santa Vergínia — Terceiros/Drone · Cobertura · Base · NPK</p></div>',
             unsafe_allow_html=True,
         )
-        st.error("Mapa KML não encontrado no servidor.")
-        if _engine is None:
+        st.error("Mapa e dados oficiais não carregaram.")
+        if _engine is None and not _rest_ok:
             st.warning(
-                "**Versão antiga ou Secrets ausentes:** este deploy ainda não tem `SUPABASE_DB_URL` "
-                f"(build esperado: **{PAINEL_BUILD}**). Veja `COMO_ATUALIZAR_PAINEL_ONLINE.md`."
+                f"**Falta conectar ao Supabase** (build **{PAINEL_BUILD}**). "
+                "No PC, rode **CONFIGURAR_PAINEL_LOCAL.ps1** ou crie `.streamlit/secrets.toml` "
+                "com `SUPABASE_DB_URL` (mesma URL usada na carga DADOS_PAINEL)."
+            )
+            st.markdown(
+                """
+**No Windows (PowerShell), uma vez:**
+
+```powershell
+cd $env:USERPROFILE\\Desktop\\pwa-comboio-posto-abastecimento\\adubacao-florestal-sv-streamlit
+powershell -ExecutionPolicy Bypass -File CONFIGURAR_PAINEL_LOCAL.ps1
+```
+
+Depois duplo clique em **RODAR_PAINEL_LOCAL.bat**.
+
+Na barra lateral escolha **Supabase (oficial)** — o mapa vem do banco (`dim_talhoes`), não precisa KML no PC.
+                """
+            )
+        elif _engine is None:
+            st.warning(
+                "Há chave REST, mas **falta `SUPABASE_DB_URL`** para o mapa GIS. "
+                "Use **CONFIGURAR_PAINEL_LOCAL.ps1** com a URL do pooler Postgres."
+            )
+        else:
+            st.warning(
+                f"Build **{PAINEL_BUILD}**. Coloque o KML em `dados/` ou use Supabase com GIS."
             )
         st.markdown(
-            f"""
-**Para o painel oficial (Supabase + mapa Esri):**
-
-1. Publicar no GitHub o código com build **`{PAINEL_BUILD}`** (repo `adubacao-florestal-sv` ou pasta `adubacao-florestal-sv-streamlit` no PWA).
-2. Streamlit Cloud → **Secrets** → `SUPABASE_DB_URL` → **Redeploy**.
-3. Supabase → executar `sql/003_schema_adubacao_florestal.sql`.
-4. No PC → `powershell -File scripts\\CARGA_DADOS_PAINEL.ps1` (pasta `Desktop\\DADOS_PAINEL`).
-
-**Enquanto isso (modo manual):** envie o KML **`fazenda_santa_virginia_completo.kml`** na barra lateral
-(e planilhas Cobertura + Base se quiser o painel completo).
-            """
+            "**Modo manual:** barra lateral → **Planilhas (Excel)** → envie KML + planilhas."
         )
         st.stop()
 
