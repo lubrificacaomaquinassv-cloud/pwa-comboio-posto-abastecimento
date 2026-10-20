@@ -7,7 +7,11 @@ from pathlib import Path
 from sqlalchemy.engine import Engine
 
 from db.supabase_io import carregar_talhoes_geom, gravar_base, gravar_cobertura, gravar_talhoes
-from ingestion.excel_parser import ler_adubacao_base, ler_adubacao_cobertura
+from ingestion.inventario_planilhas import (
+    carregar_todas_bases,
+    carregar_todas_coberturas,
+    inventariar_pasta,
+)
 from ingestion.kml_parser import ler_talhoes_kml
 from npk_calculator import aplicar_calculadora_no_df
 
@@ -29,8 +33,13 @@ def executar_carga_supabase(
         desativar_cobertura_fora_da_planilha_por_talhao,
     )
 
+    pasta = Path(cobertura).parent
+    itens = inventariar_pasta(pasta)
+    df_planilha = carregar_todas_coberturas(itens)
+    if df_planilha.empty:
+        raise RuntimeError(f"Nenhuma planilha de cobertura válida em {pasta}")
     df_planilha = aplicar_calculadora_no_df(
-        ler_adubacao_cobertura(str(cobertura)), "fertilizante", "kg_total", "area_total_ha"
+        df_planilha, "fertilizante", "kg_total", "area_total_ha"
     )
     df_cob = df_planilha
     n_desativados = 0
@@ -68,9 +77,18 @@ def executar_carga_supabase(
             projeto_carga=projeto_carga,
         )
     n_b = 0
-    if base:
-        df_base = ler_adubacao_base(str(base))
-        df_base = aplicar_calculadora_no_df(df_base, "fertilizante", "kg_total", "area_plantada_ha")
+    df_b_all = carregar_todas_bases(itens)
+    if not df_b_all.empty:
+        df_base = aplicar_calculadora_no_df(
+            df_b_all, "fertilizante", "kg_total", "area_plantada_ha"
+        )
+        n_b = gravar_base(engine, df_base)
+    elif base:
+        from ingestion.excel_parser import ler_adubacao_base
+
+        df_base = aplicar_calculadora_no_df(
+            ler_adubacao_base(str(base)), "fertilizante", "kg_total", "area_plantada_ha"
+        )
         n_b = gravar_base(engine, df_base)
 
     return {"talhoes": n_t, "cobertura": n_c, "base": n_b, "desativados_legado": n_desativados}

@@ -13,6 +13,7 @@ Antes da primeira carga inteligente, execute sql/004_controle_projeto_legado.sql
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 
@@ -29,26 +30,29 @@ from db.conciliacao_adubacao import (
 )
 from db.supabase_io import gravar_base, gravar_cobertura, gravar_talhoes
 from ingestion.dados_painel import descobrir_arquivos_dados_painel
-from ingestion.excel_parser import ler_adubacao_base, ler_adubacao_cobertura
+from ingestion.inventario_planilhas import (
+    carregar_todas_bases,
+    carregar_todas_coberturas,
+    inventariar_pasta,
+    resumo_inventario,
+)
 from ingestion.kml_parser import ler_talhoes_kml
 from npk_calculator import aplicar_calculadora_no_df
 
 
-def _analisar_planilhas(cobertura_path: str, base_path: str | None) -> None:
-    df = ler_adubacao_cobertura(cobertura_path)
-    print(f"\n=== Planilha Cobertura: {os.path.basename(cobertura_path)} ===")
-    print(f"Linhas: {len(df)} | Talhões: {df['talhao'].nunique() if len(df) else 0}")
-    if len(df):
-        print(f"Retiros (abas): {sorted(df['retiro'].dropna().unique().tolist())}")
-        print(f"Datas: {df['data'].min()} → {df['data'].max()}")
-        print(f"Fertilizantes (top): {df['fertilizante'].value_counts().head(5).to_dict()}")
-        dup = df.duplicated(subset=["talhao", "retiro", "data", "fertilizante", "kg_total"]).sum()
-        if dup:
-            print(f"⚠️  {dup} linhas duplicadas (mesma chave natural) — revisar planilha.")
-    if base_path:
-        df_b = ler_adubacao_base(base_path)
-        print(f"\n=== Planilha Base: {os.path.basename(base_path)} ===")
-        print(f"Linhas: {len(df_b)} | status: {df_b['status'].value_counts().to_dict() if len(df_b) else {}}")
+def _analisar_pasta(pasta: str) -> tuple:
+    itens = inventariar_pasta(pasta)
+    print("\n=== Inventário DADOS_PAINEL ===")
+    print(json.dumps(resumo_inventario(itens), ensure_ascii=False, indent=2))
+    df_cob = carregar_todas_coberturas(itens)
+    df_base = carregar_todas_bases(itens)
+    if df_cob.empty:
+        print("\nERRO: nenhuma planilha de COBERTURA válida na pasta.", file=sys.stderr)
+        sys.exit(1)
+    print(f"\nCobertura consolidada: {len(df_cob)} linhas, {df_cob['talhao'].nunique()} talhões")
+    if not df_base.empty:
+        print(f"Base consolidada: {len(df_base)} linhas")
+    return itens, df_cob, df_base
 
 
 def main() -> None:
@@ -67,11 +71,10 @@ def main() -> None:
     args = p.parse_args()
 
     paths = descobrir_arquivos_dados_painel(args.dados_dir)
+    kml_path = args.kml or (str(paths["kml"]) if paths["kml"] else None)
+    _itens, df_excel_raw, df_base_raw = _analisar_pasta(args.dados_dir)
     cob_path = str(paths["cobertura"])
     base_path = str(paths["base"]) if paths["base"] else None
-    kml_path = args.kml or (str(paths["kml"]) if paths["kml"] else None)
-
-    _analisar_planilhas(cob_path, base_path)
 
     url = os.environ.get("SUPABASE_DB_URL")
     if not url:
@@ -99,7 +102,7 @@ def main() -> None:
 
     try:
         df_excel = aplicar_calculadora_no_df(
-            ler_adubacao_cobertura(cob_path), "fertilizante", "kg_total", "area_total_ha"
+            df_excel_raw, "fertilizante", "kg_total", "area_total_ha"
         )
         df_db = carregar_cobertura_todos(engine)
     except Exception as e:
@@ -145,9 +148,9 @@ def main() -> None:
         )
         print(f"\nGravadas/atualizadas {n} linhas de cobertura (novos + alterados).")
 
-    if base_path:
+    if not df_base_raw.empty:
         df_base = aplicar_calculadora_no_df(
-            ler_adubacao_base(base_path), "fertilizante", "kg_total", "area_plantada_ha"
+            df_base_raw, "fertilizante", "kg_total", "area_plantada_ha"
         )
         n_b = gravar_base(engine, df_base)
         print(f"Base/subsolagem: {n_b} linhas (upsert).")
@@ -158,7 +161,8 @@ def main() -> None:
         n_t = gravar_talhoes(engine, gdf)
         print(f"KML talhões: {n_t} upsert.")
 
-    print("\nAuditoria SQL sugerida: SELECT * FROM vw_auditoria_cobertura_por_projeto;")
+    print("\nAuditoria: SELECT * FROM vw_auditoria_cobertura_por_projeto;")
+    print("Lovable: SELECT * FROM vw_api_adubacao_cobertura LIMIT 10;")
 
 
 if __name__ == "__main__":
