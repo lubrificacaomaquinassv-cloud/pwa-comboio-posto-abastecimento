@@ -73,8 +73,12 @@ Write-Host ""
 Write-Host "Instalando dependencias (se necessario)..." -ForegroundColor DarkGray
 & $py -m pip install -q -r requirements.txt
 
-Write-Host "Executando sync (--dados-dir)..." -ForegroundColor Green
-& $py scripts/sync_excel_to_supabase.py --dados-dir $PastaDados
+Write-Host ""
+Write-Host "1) Analise (sem gravar) — recomendado se ja ha dados no Supabase:" -ForegroundColor Cyan
+Write-Host "   python scripts/analisar_e_sync_adubacao.py --dados-dir `"$PastaDados`" --analise-only"
+Write-Host ""
+Write-Host "2) Sync inteligente (so novos/alterados + legado por talhao)..." -ForegroundColor Green
+& $py scripts/analisar_e_sync_adubacao.py --dados-dir $PastaDados --sync --modo por_talhao
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host ""
