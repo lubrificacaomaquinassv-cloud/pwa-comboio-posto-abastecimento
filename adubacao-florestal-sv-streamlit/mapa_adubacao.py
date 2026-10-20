@@ -115,8 +115,12 @@ def html_ficha_lateral(ficha: dict | None) -> str:
     if not ficha:
         return """
         <div class="sv-map-panel sv-ficha">
-            <div class="sv-map-panel-title">TALHÃO</div>
-            <p class="sv-ficha-hint">Clique em um polígono no mapa para ver os dados de adubação.</p>
+            <div class="sv-map-panel-title">FICHA DO TALHÃO</div>
+            <p class="sv-ficha-hint-strong">
+                <b>Clique dentro do polígono colorido</b> no mapa. O talhão ficará com
+                <span style="color:#00e676">borda verde</span> e os dados aparecem aqui.
+            </p>
+            <p class="sv-ficha-hint">A busca por número abaixo é opcional.</p>
         </div>
         """
     t = html.escape(str(ficha.get("talhao", "")))
@@ -133,8 +137,8 @@ def html_ficha_lateral(ficha: dict | None) -> str:
         else ""
     )
     return f"""
-    <div class="sv-map-panel sv-ficha">
-        <div class="sv-map-panel-title">TALHÃO {t}</div>
+    <div class="sv-map-panel sv-ficha sv-ficha-ativa">
+        <div class="sv-map-panel-title">TALHÃO {t} · SELECIONADO</div>
         <div class="sv-ficha-grid">
             <span class="lbl">Nº talhão</span><span class="val">{t}</span>
             <span class="lbl">Retiro</span><span class="val">{retiro}</span>
@@ -186,6 +190,16 @@ def css_mapa_panels() -> str:
     .sv-ficha-grid .val { color: #f0f3f6; font-weight: 600; text-align: right; }
     .sv-ficha-hint { color: #9aa4b2; margin: 0; font-size: 12px; line-height: 1.4; }
     .sv-ficha-foot { color: #6e7681; font-size: 11px; margin: 10px 0 0 0; }
+    .sv-ficha.sv-ficha-ativa {
+        border: 2px solid #00e676;
+        box-shadow: 0 0 0 1px rgba(0, 230, 118, 0.35);
+    }
+    .sv-ficha-hint-strong {
+        color: #c9d1d9;
+        font-size: 12px;
+        margin: 0 0 8px 0;
+        line-height: 1.45;
+    }
     div[data-testid="stVerticalBlock"] > div:has(.sv-map-controls-anchor) {
         margin-top: -8px;
     }
@@ -251,19 +265,53 @@ def _coords_folium(geom) -> list:
     return []
 
 
-def _adicionar_poligono_talhao(mapa: folium.Map, geom, cor: str, talhao: str) -> None:
+def _html_popup_talhao(talhao: str, ficha: dict | None) -> str:
+    if not ficha:
+        return f"<b>Talhão {html.escape(talhao)}</b><br>Clique para selecionar."
+    t = html.escape(str(ficha.get("talhao", talhao)))
+    fert = html.escape(str(ficha.get("fertilizante") or "—"))
+    status = html.escape(str(ficha.get("status_cobertura") or "—"))
+    pct = ficha.get("pct_cobertura")
+    pct_txt = "—" if pct is None or (isinstance(pct, float) and np.isnan(pct)) else f"{float(pct):.1f}%"
+    return (
+        f"<div style='min-width:180px;font-size:12px;line-height:1.5'>"
+        f"<b>Talhão {t}</b><br>"
+        f"Retiro: {html.escape(str(ficha.get('retiro') or '—'))}<br>"
+        f"Status: {status} · {pct_txt}<br>"
+        f"Fertilizante: {fert}<br>"
+        f"Realizado: {_fmt_num(ficha.get('realizado_ha'))} kg/ha"
+        f"</div>"
+    )
+
+
+def _adicionar_poligono_talhao(
+    mapa: folium.Map,
+    geom,
+    cor: str,
+    talhao: str,
+    *,
+    selecionado: bool = False,
+    outro_selecionado_no_mapa: bool = False,
+    ficha_popup: dict | None = None,
+) -> None:
     """Camadas folium sem lambdas — compatível com st_folium (JSON serializável)."""
     rings = _coords_folium(geom)
     if not rings:
         return
     tip = f"Talhão: {talhao}"
-    pop = folium.Popup(tip, max_width=220)
+    pop = folium.Popup(_html_popup_talhao(talhao, ficha_popup), max_width=280)
+    if selecionado:
+        borda, peso, opacidade = "#00e676", 4, 0.88
+    elif outro_selecionado_no_mapa:
+        borda, peso, opacidade = "#333333", 1, 0.38
+    else:
+        borda, peso, opacidade = "#1a1a1a", 1, 0.72
     opts = dict(
-        color="#1a1a1a",
-        weight=1,
+        color=borda,
+        weight=peso,
         fill=True,
         fill_color=cor or COR_SEM_DADO,
-        fill_opacity=0.72,
+        fill_opacity=opacidade,
         tooltip=tip,
         popup=pop,
     )
@@ -280,6 +328,8 @@ def _folium_mapa(
     centro_lon: float,
     camada: Camada,
     mostrar_rotulos: bool,
+    talhao_selecionado: str | None = None,
+    fichas_por_talhao: dict[str, dict] | None = None,
 ) -> folium.Map:
     tiles = TILES_TERRENO if camada == "Terreno" else TILES_SATELITE
     mapa = folium.Map(
@@ -290,10 +340,27 @@ def _folium_mapa(
         control_scale=False,
     )
 
+    sel = (str(talhao_selecionado).strip().upper() if talhao_selecionado else None)
+    fichas = fichas_por_talhao or {}
+    bounds_sel = None
+
     for _, row in gdf.iterrows():
         tal = str(row.get("talhao", ""))
+        tal_norm = normalizar_codigo_talhao(tal) or tal
         cor = str(row.get("cor") or COR_SEM_DADO)
-        _adicionar_poligono_talhao(mapa, row.geometry, cor, tal)
+        is_sel = sel is not None and tal_norm == sel
+        ficha_pop = fichas.get(tal_norm) or fichas.get(tal)
+        _adicionar_poligono_talhao(
+            mapa,
+            row.geometry,
+            cor,
+            tal,
+            selecionado=is_sel,
+            outro_selecionado_no_mapa=bool(sel and not is_sel),
+            ficha_popup=ficha_pop if is_sel else None,
+        )
+        if is_sel and row.geometry is not None and not row.geometry.is_empty:
+            bounds_sel = row.geometry.bounds
         if mostrar_rotulos and row.geometry is not None and not row.geometry.is_empty:
             c = row.geometry.centroid
             folium.Marker(
@@ -307,6 +374,10 @@ def _folium_mapa(
                     ),
                 ),
             ).add_to(mapa)
+
+    if bounds_sel is not None:
+        minx, miny, maxx, maxy = bounds_sel
+        mapa.fit_bounds([[miny, minx], [maxy, maxx]], padding=(40, 40))
 
     return mapa
 
@@ -407,6 +478,7 @@ def render_mapa_adubacao(
     ficha: dict | None,
     key_suffix: str = "",
     talhoes_lista: list[str] | None = None,
+    talhao_selecionado: str | None = None,
 ) -> str | None:
     """
     Renderiza mapa + painéis flutuantes. Retorna talhão clicado (se houver).
@@ -440,11 +512,16 @@ def render_mapa_adubacao(
             key=f"pintar_por{key_suffix}",
         )
         rotulos = st.checkbox(
-            "Rótulos dos talhões",
-            value=True,
+            "Mostrar números no mapa",
+            value=False,
+            help="Desligado por padrão — mapa mais limpo; clique no polígono para escolher o talhão.",
             key=f"rotulos_talhao{key_suffix}",
         )
         ficha_slot = st.empty()
+        if ficha:
+            ficha_slot.markdown(html_ficha_lateral(ficha), unsafe_allow_html=True)
+        else:
+            ficha_slot.markdown(html_ficha_lateral(None), unsafe_allow_html=True)
 
     gdf = _gdf_para_mapa(gdf_mapa)
     gdf["cor"] = _montar_cores(gdf, pintar)  # type: ignore[arg-type]
@@ -452,7 +529,16 @@ def render_mapa_adubacao(
     centro_lat = float(gdf.geometry.centroid.y.mean())
     centro_lon = float(gdf.geometry.centroid.x.mean())
 
-    mapa = _folium_mapa(gdf, centro_lat, centro_lon, camada, rotulos)
+    sel = talhao_selecionado or st.session_state.get("talhao_selecionado")
+    mapa = _folium_mapa(
+        gdf,
+        centro_lat,
+        centro_lon,
+        camada,
+        rotulos,
+        talhao_selecionado=sel,
+        fichas_por_talhao={str(ficha["talhao"]): ficha} if ficha and ficha.get("talhao") else None,
+    )
 
     with col_map:
         out = st_folium(
@@ -490,24 +576,16 @@ def render_mapa_adubacao(
             sel = st.session_state.get(key_buscar)
             if sel == _placeholder:
                 st.session_state.talhao_selecionado = None
-                st.session_state["sidebar_ver_talhao"] = "(nenhum)"
             else:
-                t = normalizar_codigo_talhao(sel)
-                st.session_state.talhao_selecionado = t
-                if t:
-                    st.session_state["sidebar_ver_talhao"] = t
+                st.session_state.talhao_selecionado = normalizar_codigo_talhao(sel)
 
-        st.markdown(
-            '<div class="sv-map-panel"><div class="sv-map-panel-title">BUSCAR TALHÃO</div></div>',
-            unsafe_allow_html=True,
-        )
-        st.selectbox(
-            "Buscar talhão",
-            opcoes,
-            label_visibility="collapsed",
-            key=key_buscar,
-            on_change=_on_buscar_talhao,
-        )
+        with st.expander("Buscar por número (opcional)", expanded=False):
+            st.selectbox(
+                "Buscar talhão",
+                opcoes,
+                label_visibility="collapsed",
+                key=key_buscar,
+                on_change=_on_buscar_talhao,
+            )
 
-    ficha_slot.markdown(html_ficha_lateral(ficha), unsafe_allow_html=True)
     return clicado

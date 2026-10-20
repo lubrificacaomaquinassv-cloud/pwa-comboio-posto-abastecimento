@@ -47,7 +47,7 @@ from ingestion.dados_painel import descobrir_arquivos_dados_painel
 from ingestion.talhao_codigo import normalizar_codigo_talhao, normalizar_coluna_talhao
 from mapa_adubacao import painel_ficha_talhao_streamlit, render_mapa_adubacao
 
-PAINEL_BUILD = "2026.10.20-ficha-data-v8"
+PAINEL_BUILD = "2026.10.20-mapa-clique-v9"
 
 # Valores de "retiro" que vêm de abas/nomes de planilha — não usar como filtro de fazenda
 _RETIRO_PLANILHA_IGNORAR = frozenset(
@@ -659,18 +659,13 @@ def _on_sidebar_ver_talhao() -> None:
     sel = st.session_state.get("sidebar_ver_talhao")
     if sel == "(nenhum)":
         st.session_state.talhao_selecionado = None
-        st.session_state["buscar_talhao_prod"] = "— escolha —"
     else:
-        t = normalizar_codigo_talhao(sel)
-        st.session_state.talhao_selecionado = t
-        if t:
-            st.session_state["buscar_talhao_prod"] = t
+        st.session_state.talhao_selecionado = normalizar_codigo_talhao(sel)
 
 
-if _talhao_ativo in _op_sidebar:
-    st.session_state["sidebar_ver_talhao"] = _talhao_ativo
-else:
-    st.session_state["sidebar_ver_talhao"] = "(nenhum)"
+_sidebar_val = _talhao_ativo if _talhao_ativo in _op_sidebar else "(nenhum)"
+if st.session_state.get("sidebar_ver_talhao") != _sidebar_val:
+    st.session_state["sidebar_ver_talhao"] = _sidebar_val
 
 st.sidebar.selectbox(
     "Número do talhão",
@@ -690,17 +685,37 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Área mapeada (filtro)", f"{painel_f['area_ha_kml'].sum():,.0f} ha")
-_pct_cob = _pct_area_aplicada(painel_f, "area_adubada_cobertura_ha")
-_pct_base = _pct_area_aplicada(painel_f, "area_subsolada_ha")
-col2.metric("% Cobertura aplicada", f"{_pct_cob:.1f}%" if _pct_cob is not None else "—")
-col3.metric("% Base/Subsolagem", f"{_pct_base:.1f}%" if _pct_base is not None else "—")
-col4.metric("Talhões com alerta de sequência", int(painel_f["alerta_sequencia"].sum()))
-st.caption(
-    "Os KPIs acima seguem os filtros **Retiro** e **Classe** na barra lateral. "
-    "A **ficha do talhão** (aba Mapa) muda ao escolher um talhão ou clicar no polígono."
-)
+_tal_kpi = st.session_state.get("talhao_selecionado")
+_row_tal = None
+if _tal_kpi and not painel_f.empty:
+    _m = painel_f["talhao"].astype(str).str.upper() == str(_tal_kpi).upper()
+    if _m.any():
+        _row_tal = painel_f.loc[_m].iloc[0]
+
+if _row_tal is not None:
+    st.markdown(f"#### Talhão **{_tal_kpi}** selecionado")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Área no mapa (ha)", f"{float(_row_tal['area_ha_kml']):,.2f}")
+    k2.metric("% Cobertura (talhão)", f"{float(_row_tal['pct_cobertura']):.1f}%")
+    k3.metric("Status cobertura", str(_row_tal.get("status_cobertura") or "—"))
+    k4.metric("Retiro · classe", f"{_row_tal.get('retiro')} · {_row_tal.get('classe')}")
+    with st.expander("Visão geral da fazenda (filtros Retiro e Classe)", expanded=False):
+        g1, g2, g3, g4 = st.columns(4)
+        g1.metric("Área mapeada", f"{painel_f['area_ha_kml'].sum():,.0f} ha")
+        _pct_cob = _pct_area_aplicada(painel_f, "area_adubada_cobertura_ha")
+        _pct_base = _pct_area_aplicada(painel_f, "area_subsolada_ha")
+        g2.metric("% Cobertura (total)", f"{_pct_cob:.1f}%" if _pct_cob is not None else "—")
+        g3.metric("% Base/Subsolagem", f"{_pct_base:.1f}%" if _pct_base is not None else "—")
+        g4.metric("Alertas sequência", int(painel_f["alerta_sequencia"].sum()))
+else:
+    st.markdown("#### Visão geral — clique no **mapa** para selecionar um talhão")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Área mapeada (filtro)", f"{painel_f['area_ha_kml'].sum():,.0f} ha")
+    _pct_cob = _pct_area_aplicada(painel_f, "area_adubada_cobertura_ha")
+    _pct_base = _pct_area_aplicada(painel_f, "area_subsolada_ha")
+    col2.metric("% Cobertura aplicada", f"{_pct_cob:.1f}%" if _pct_cob is not None else "—")
+    col3.metric("% Base/Subsolagem", f"{_pct_base:.1f}%" if _pct_base is not None else "—")
+    col4.metric("Talhões com alerta de sequência", int(painel_f["alerta_sequencia"].sum()))
 
 _cob_talhoes = set(df_cobertura["talhao"].dropna().unique()) if not df_cobertura.empty else set()
 _map_talhoes = set(painel_f["talhao"].dropna().unique()) if not painel_f.empty else set()
@@ -770,24 +785,29 @@ with aba_mapa:
         gdf_mapa["kg_total_map"] = gdf_mapa["kg_total_map"].fillna(0)
 
         try:
+            _ficha_atual = ficha_talhao_merged(
+                ult_cob, painel_f, st.session_state.talhao_selecionado
+            )
             clicado = render_mapa_adubacao(
                 gdf_mapa,
-                ficha_talhao_merged(ult_cob, painel_f, st.session_state.talhao_selecionado),
+                _ficha_atual,
                 key_suffix="_prod",
                 talhoes_lista=sorted(
                     gdf_mapa["talhao"].dropna().astype(str).unique().tolist(),
                     key=lambda x: (len(x), x),
                 ),
+                talhao_selecionado=st.session_state.talhao_selecionado,
             )
             if clicado and clicado != st.session_state.talhao_selecionado:
                 st.session_state.talhao_selecionado = normalizar_codigo_talhao(clicado)
-                if st.session_state.talhao_selecionado in _op_sidebar:
-                    st.session_state["sidebar_ver_talhao"] = st.session_state.talhao_selecionado
-                st.session_state["buscar_talhao_prod"] = st.session_state.talhao_selecionado
                 st.rerun()
-            painel_ficha_talhao_streamlit(
-                ficha_talhao_merged(ult_cob, painel_f, st.session_state.talhao_selecionado)
-            )
+            if st.session_state.talhao_selecionado:
+                painel_ficha_talhao_streamlit(_ficha_atual)
+            else:
+                st.caption(
+                    "Dica: clique **dentro** da área colorida de um talhão. "
+                    "A ficha completa aparece à direita do mapa e aqui embaixo."
+                )
         except Exception as e:
             st.error(f"Erro ao renderizar o mapa: {e}")
             st.exception(e)
