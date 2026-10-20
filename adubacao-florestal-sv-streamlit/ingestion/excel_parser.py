@@ -13,6 +13,8 @@ Parsers das planilhas de adubacao (formato real usado na Santa Vergínia).
 """
 import pandas as pd
 
+from ingestion.talhao_codigo import normalizar_coluna_talhao
+
 COLS_COBERTURA = [
     "talhao", "area_total_ha", "area_floresta_ha", "fertilizante",
     "data", "dose_recomendada_ha", "dose_realizada_ha", "kg_total", "operador",
@@ -53,8 +55,7 @@ def ler_adubacao_cobertura(caminho_xlsx: str) -> pd.DataFrame:
 
     df = pd.concat(partes, ignore_index=True)
 
-    # normalizacao
-    df["talhao"] = df["talhao"].astype(str).str.strip().str.upper()
+    df = normalizar_coluna_talhao(df)
     df["fertilizante"] = df["fertilizante"].astype(str).str.strip()
     df["data"] = pd.to_datetime(df["data"], errors="coerce")
     for col in ["area_total_ha", "area_floresta_ha", "dose_recomendada_ha", "dose_realizada_ha", "kg_total"]:
@@ -83,7 +84,7 @@ def ler_adubacao_base(caminho_xlsx: str, aba: str = "Subsolagem") -> pd.DataFram
     df = pd.concat([bloco_feito, bloco_pendente], ignore_index=True)
     df = df[df["talhao"].notna()].copy()
 
-    df["talhao"] = df["talhao"].astype(str).str.strip().str.upper()
+    df = normalizar_coluna_talhao(df)
     df["retiro"] = df["retiro"].astype(str).str.strip()
     df["fertilizante"] = df["fertilizante"].astype(str).str.strip()
     for col in ["area_plantada_ha", "dose_ha", "kg_total"]:

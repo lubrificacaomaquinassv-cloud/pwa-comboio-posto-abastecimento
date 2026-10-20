@@ -23,19 +23,33 @@ def tabela_existe(engine: Engine, nome: str) -> bool:
     return row is not None
 
 
-def carregar_cobertura(engine: Engine) -> pd.DataFrame:
-    if not tabela_existe(engine, "fato_adubacao_cobertura"):
-        return pd.DataFrame()
-    df = pd.read_sql("SELECT * FROM fato_adubacao_cobertura ORDER BY talhao, data", engine)
+def _padronizar_df_cobertura(df: pd.DataFrame) -> pd.DataFrame:
+    from ingestion.talhao_codigo import normalizar_coluna_talhao
+
+    if df.empty:
+        return df
+    ren = {"n_kg": "N_kg", "p2o5_kg": "P2O5_kg", "k2o_kg": "K2O_kg"}
+    df = df.rename(columns={k: v for k, v in ren.items() if k in df.columns})
+    df = normalizar_coluna_talhao(df)
     if "data" in df.columns:
         df["data"] = pd.to_datetime(df["data"], errors="coerce")
     return df
 
 
+def carregar_cobertura(engine: Engine) -> pd.DataFrame:
+    if not tabela_existe(engine, "fato_adubacao_cobertura"):
+        return pd.DataFrame()
+    df = pd.read_sql("SELECT * FROM fato_adubacao_cobertura ORDER BY talhao, data", engine)
+    return _padronizar_df_cobertura(df)
+
+
 def carregar_base(engine: Engine) -> pd.DataFrame:
     if not tabela_existe(engine, "fato_adubacao_base"):
         return pd.DataFrame()
-    return pd.read_sql("SELECT * FROM fato_adubacao_base ORDER BY talhao", engine)
+    from ingestion.talhao_codigo import normalizar_coluna_talhao
+
+    df = pd.read_sql("SELECT * FROM fato_adubacao_base ORDER BY talhao", engine)
+    return normalizar_coluna_talhao(df)
 
 
 def _coluna_existe(engine: Engine, tabela: str, coluna: str, schema: str = "public") -> bool:

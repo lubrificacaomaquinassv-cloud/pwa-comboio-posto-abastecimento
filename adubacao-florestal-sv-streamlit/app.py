@@ -33,10 +33,16 @@ from db.supabase_io import (
     gravar_talhoes,
     ultimo_cobertura_por_talhao,
 )
+from db.supabase_rest import (
+    carregar_base_rest,
+    carregar_cobertura_rest,
+    rest_disponivel,
+)
 from ingestion.dados_painel import descobrir_arquivos_dados_painel
+from ingestion.talhao_codigo import normalizar_coluna_talhao
 from mapa_adubacao import render_mapa_adubacao
 
-PAINEL_BUILD = "2026.10.19-supabase-sync-pipeline"
+PAINEL_BUILD = "2026.10.20-dados-adubacao-final"
 
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
@@ -103,21 +109,24 @@ def get_engine():
 # Sidebar - fonte (Supabase ou planilhas)
 # -----------------------------------------------------------------
 _engine = get_engine()
+_rest_ok = rest_disponivel()
+_supabase_ok = _engine is not None or _rest_ok
 _opcoes_fonte = ["☁️ Supabase (oficial)", "📂 Planilhas (Excel)"]
-_idx_fonte = 0 if _engine else 1
+_idx_fonte = 0 if _supabase_ok else 1
 st.sidebar.title("📂 Fontes de dados")
 fonte_dados = st.sidebar.radio(
     "Origem dos lançamentos",
     _opcoes_fonte,
     index=_idx_fonte,
-    help="Produção: dados lidos do Supabase. Desenvolvimento: upload das planilhas.",
+    help="Produção: Supabase (Postgres ou API). Planilhas: upload ou pasta dados/ no servidor.",
 )
 _usa_supabase = fonte_dados.startswith("☁️")
 
-if _usa_supabase and _engine is None:
+if _usa_supabase and not _supabase_ok:
     st.error(
-        "Modo Supabase selecionado, mas `SUPABASE_DB_URL` não está configurado "
-        "(Secrets do Streamlit Cloud ou `.streamlit/secrets.toml`)."
+        "Modo Supabase selecionado, mas faltam credenciais. Configure **uma** das opções nos Secrets:\n\n"
+        "- `SUPABASE_DB_URL` (Transaction pooler), **ou**\n"
+        "- `SUPABASE_URL` + `SUPABASE_KEY` (de preferência **service_role** para ler `fato_adubacao_*`)."
     )
     st.stop()
 
@@ -256,11 +265,20 @@ def _preferencia_gis() -> str | None:
 
 
 _fonte_planilhas = "Supabase"
+_modo_servidor_local = False
 if _usa_supabase:
     try:
-        df_cobertura = carregar_cobertura(_engine)
-        df_base = carregar_base(_engine)
-        gdf_db, _fonte_gis = carregar_talhoes_geom(_engine, preferir_tabela=_preferencia_gis())
+        if _engine is not None:
+            df_cobertura = carregar_cobertura(_engine)
+            df_base = carregar_base(_engine)
+            st.sidebar.caption("Conexão: Postgres (pooler)")
+        else:
+            df_cobertura = carregar_cobertura_rest()
+            df_base = carregar_base_rest()
+            st.sidebar.success("Conexão: Supabase API (REST)")
+        gdf_db, _fonte_gis = (None, None)
+        if _engine is not None:
+            gdf_db, _fonte_gis = carregar_talhoes_geom(_engine, preferir_tabela=_preferencia_gis())
         if gdf_db is not None and len(gdf_db):
             gdf_talhoes = gdf_db
             st.sidebar.success(f"🗺️ GIS Supabase: **{_fonte_gis}** ({len(gdf_db)} polígonos)")
@@ -310,7 +328,32 @@ Streamlit Cloud: secret **`SUPABASE_DB_URL`** + origem **☁️ Supabase (oficia
             st.stop()
     st.sidebar.caption(f"Planilhas: {_fonte_planilhas}")
 
-_modo_completo = _usa_supabase or bool(arq_kml and arq_cobertura and arq_base)
+# Modo servidor: planilhas + KML em adubacao-florestal-sv-streamlit/dados/ (sem Supabase, sem upload)
+if not _usa_supabase and df_cobertura.empty and _tem_dados_servidor:
+    try:
+        df_disk, df_base_disk, _ = _carregar_planilhas_pasta_dados()
+        if not df_disk.empty and _bytes_kml():
+            df_cobertura = aplicar_calculadora_no_df(
+                df_disk, "fertilizante", "kg_total", "area_total_ha"
+            )
+            df_base = df_base_disk
+            if not df_base.empty:
+                df_base = aplicar_calculadora_no_df(
+                    df_base, "fertilizante", "kg_total", "area_plantada_ha"
+                )
+            gdf_talhoes = _carregar_kml(_bytes_kml())
+            _fonte_gis = "KML em dados/"
+            _fonte_planilhas = "dados/ (servidor)"
+            _modo_servidor_local = True
+            st.sidebar.success("📁 Cobertura/Base/KML lidos de **`dados/`** (persistente no deploy).")
+    except Exception as e:
+        st.sidebar.warning(f"Não foi possível ler `dados/`: {e}")
+
+_modo_completo = (
+    (_usa_supabase and not df_cobertura.empty and gdf_talhoes is not None)
+    or _modo_servidor_local
+    or bool(arq_kml and arq_cobertura and arq_base)
+)
 
 # -----------------------------------------------------------------
 # Modo Terceiros/Drone — KML + planilhas já embutidos (sem upload)
@@ -386,7 +429,11 @@ except Exception as e:
 # -----------------------------------------------------------------
 # Cruzamento: talhao (KML) x retiro (PDF/planilha) x cobertura x base
 # -----------------------------------------------------------------
-gdf_validos = gdf_talhoes[gdf_talhoes["talhao"].notna()].copy()
+gdf_validos = normalizar_coluna_talhao(
+    gdf_talhoes[gdf_talhoes["talhao"].notna()].copy()
+)
+df_cobertura = normalizar_coluna_talhao(df_cobertura)
+df_base = normalizar_coluna_talhao(df_base)
 
 de_para_planilhas = pd.concat([
     df_cobertura[["talhao", "retiro"]],
@@ -472,6 +519,26 @@ else:
     col2.metric("% Cobertura aplicada", "—")
     col3.metric("% Base/Subsolagem", "—")
 col4.metric("Talhões com alerta de sequência", int(painel_f["alerta_sequencia"].sum()))
+
+_cob_talhoes = set(df_cobertura["talhao"].dropna().unique()) if not df_cobertura.empty else set()
+_map_talhoes = set(painel_f["talhao"].dropna().unique()) if not painel_f.empty else set()
+_cruzados = len(_cob_talhoes & _map_talhoes)
+if df_cobertura.empty:
+    st.error(
+        "Nenhum lançamento de adubação carregado. Rode **CARGA_DADOS_PAINEL.ps1** (Desktop\\DADOS_PAINEL) "
+        "ou coloque os xlsx em **`dados/`** e sincronize (aba ☁️ Supabase / GitHub Actions)."
+    )
+elif _cruzados == 0:
+    st.warning(
+        f"Planilha com **{len(_cob_talhoes)}** talhões, mapa com **{len(_map_talhoes)}** — "
+        "**nenhum código coincide**. Verifique se a planilha de Cobertura é da mesma safra/fazenda "
+        "ou se os códigos no Excel batem com o KML."
+    )
+else:
+    st.caption(
+        f"Dados de cobertura: **{len(df_cobertura)}** lançamentos · "
+        f"**{_cruzados}** talhões cruzados com o mapa · fonte: {_fonte_planilhas}"
+    )
 
 aba_mapa, aba_cobertura, aba_base, aba_calc, aba_terceiros, aba_supabase = st.tabs(
     ["🗺️ Mapa", "🌾 Cobertura", "🚜 Base/Subsolagem", "🧮 Calculadora NPK",
