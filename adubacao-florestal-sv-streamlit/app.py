@@ -47,7 +47,7 @@ from ingestion.dados_painel import descobrir_arquivos_dados_painel
 from ingestion.talhao_codigo import normalizar_codigo_talhao, normalizar_coluna_talhao
 from mapa_adubacao import painel_ficha_talhao_streamlit, render_mapa_adubacao
 
-PAINEL_BUILD = "2026.10.20-talhao-sync-v7"
+PAINEL_BUILD = "2026.10.20-ficha-data-v8"
 
 # Valores de "retiro" que vêm de abas/nomes de planilha — não usar como filtro de fazenda
 _RETIRO_PLANILHA_IGNORAR = frozenset(
@@ -659,8 +659,12 @@ def _on_sidebar_ver_talhao() -> None:
     sel = st.session_state.get("sidebar_ver_talhao")
     if sel == "(nenhum)":
         st.session_state.talhao_selecionado = None
+        st.session_state["buscar_talhao_prod"] = "— escolha —"
     else:
-        st.session_state.talhao_selecionado = normalizar_codigo_talhao(sel)
+        t = normalizar_codigo_talhao(sel)
+        st.session_state.talhao_selecionado = t
+        if t:
+            st.session_state["buscar_talhao_prod"] = t
 
 
 if _talhao_ativo in _op_sidebar:

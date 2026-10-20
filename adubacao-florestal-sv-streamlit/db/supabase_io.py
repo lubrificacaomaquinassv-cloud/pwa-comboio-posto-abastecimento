@@ -521,7 +521,7 @@ def ficha_para_json(ficha: dict | None) -> str:
     out = {}
     for k, v in ficha.items():
         if isinstance(v, pd.Timestamp):
-            out[k] = v.strftime("%d/%m/%Y")
+            out[k] = v.strftime("%d/%m/%Y") if pd.notna(v) else None
         elif pd.isna(v):
             out[k] = None
         else:

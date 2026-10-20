@@ -65,10 +65,13 @@ def _fmt_num(val, casas: int = 2) -> str:
 
 
 def _fmt_data(val) -> str:
-    if val is None or (isinstance(val, float) and pd.isna(val)):
+    if val is None or pd.isna(val):
         return "—"
     if hasattr(val, "strftime"):
-        return val.strftime("%d/%m/%Y")
+        try:
+            return val.strftime("%d/%m/%Y")
+        except (ValueError, TypeError):
+            return "—"
     return str(val)
 
 
