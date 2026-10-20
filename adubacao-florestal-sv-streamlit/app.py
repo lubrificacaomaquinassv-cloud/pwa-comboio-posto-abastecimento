@@ -21,7 +21,6 @@ from ingestion.kml_parser import ler_talhoes_kml, talhoes_com_codigo_ambiguo
 from ingestion.excel_parser import ler_adubacao_cobertura, ler_adubacao_base
 from ingestion.pdf_retiro_parser import ler_pasta_pdfs_retiro
 from npk_calculator import aplicar_calculadora_no_df, calcular_npk_aplicado, dose_por_ha
-from painel_terceiros import carregar_terceiros, render_aba_terceiros
 from db.carga_supabase import sync_pasta_dados_painel
 from db.supabase_url import SECRETS_PATH, create_supabase_engine, ler_supabase_db_url
 from db.supabase_io import (
@@ -43,7 +42,7 @@ from ingestion.dados_painel import descobrir_arquivos_dados_painel
 from ingestion.talhao_codigo import normalizar_coluna_talhao
 from mapa_adubacao import painel_ficha_talhao_streamlit, render_mapa_adubacao
 
-PAINEL_BUILD = "2026.10.20-mapa-ficha-v3"
+PAINEL_BUILD = "2026.10.20-adubacao-only-v4"
 
 st.set_page_config(page_title="Adubação Florestal - Santa Vergínia", layout="wide", initial_sidebar_state="expanded")
 
@@ -194,28 +193,7 @@ else:
     arq_cobertura = st.sidebar.file_uploader("Adubação de Cobertura (xlsx)", type=["xlsx"])
     arq_base = st.sidebar.file_uploader("Adubação de Base / Subsolagem (xlsx)", type=["xlsx"])
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("Operações Terceiros / Drone")
-arq_terceiros = st.sidebar.file_uploader(
-    "Planilhas COSER / F-ORION / EcoAero (xlsx, múltiplos)",
-    type=["xlsx"],
-    accept_multiple_files=True,
-)
-_pasta_terceiros_default = os.path.join(
-    os.path.dirname(__file__), "dados_terceiros"
-)
-_usar_pasta_local = st.sidebar.checkbox(
-    "Carregar planilhas terceiros (COSER / F-ORION / EcoAero)",
-    value=os.path.isdir(_pasta_terceiros_default),
-    help="Já vem com as planilhas da pasta dados_terceiros/ no servidor.",
-)
 _tem_kml = bool(arq_kml) or os.path.isfile(_kml_default)
-
-st.sidebar.markdown("---")
-st.sidebar.caption(
-    "**Modo Terceiros/Drone:** abre direto (KML + planilhas já no servidor).\n\n"
-    "**Modo NPK completo:** suba também Cobertura + Base (xlsx)."
-)
 
 # -----------------------------------------------------------------
 # Ingestao (cache para nao reprocessar a cada interacao do usuario)
@@ -282,14 +260,6 @@ def _bytes_kml() -> bytes | None:
         with open(_kml_default, "rb") as f:
             return f.read()
     return None
-
-
-def _carregar_df_terceiros() -> pd.DataFrame:
-    if arq_terceiros:
-        return carregar_terceiros(arq_terceiros)
-    if _usar_pasta_local and os.path.isdir(_pasta_terceiros_default):
-        return carregar_terceiros(_pasta_terceiros_default)
-    return pd.DataFrame()
 
 
 # -----------------------------------------------------------------
@@ -425,13 +395,13 @@ _modo_completo = (
 )
 
 # -----------------------------------------------------------------
-# Modo Terceiros/Drone — KML + planilhas já embutidos (sem upload)
+# Sem dados de adubação carregados
 # -----------------------------------------------------------------
 if not _modo_completo:
     if not _tem_kml:
         st.markdown(
             '<div class="sv-banner"><h1>🌳 Painel de Adubação Florestal</h1>'
-            '<p>Fazenda Santa Vergínia — Terceiros/Drone · Cobertura · Base · NPK</p></div>',
+            '<p>Fazenda Santa Vergínia — Cobertura · Base/Subsolagem · NPK</p></div>',
             unsafe_allow_html=True,
         )
         st.error("Mapa e dados oficiais não carregaram.")
@@ -469,26 +439,16 @@ Na barra lateral escolha **Supabase (oficial)** — o mapa vem do banco (`dim_ta
         )
         st.stop()
 
-    try:
-        gdf_talhoes = _carregar_kml(_bytes_kml())
-        gdf_validos = gdf_talhoes[gdf_talhoes["talhao"].notna()].copy()
-        df_terceiros = _carregar_df_terceiros()
-    except Exception as e:
-        st.error(f"Erro ao processar KML / terceiros: {e}")
-        st.exception(e)
-        st.stop()
-
     st.markdown(
-        '<div class="sv-banner"><h1>🚁 Operações Terceiros / Drone</h1>'
-        '<p>Fazenda Santa Vergínia — COSER · F-ORION · EcoAero</p></div>',
+        '<div class="sv-banner"><h1>🌳 Painel de Adubação Florestal</h1>'
+        '<p>Fazenda Santa Vergínia — Cobertura · Base · NPK</p></div>',
         unsafe_allow_html=True,
     )
-    st.success("Mapa KML e planilhas de terceiros carregados automaticamente.")
-    st.info(
-        "Para ver também **Cobertura**, **Base/Subsolagem** e **Calculadora NPK**, "
-        "suba na barra lateral as planilhas de Adubação de Cobertura e Base (xlsx)."
+    st.warning(
+        "Mapa encontrado, mas **faltam planilhas de adubação**. "
+        "Use **Supabase (oficial)** na barra lateral (após CONFIGURAR_PAINEL_LOCAL.ps1) "
+        "ou envie Cobertura + Base em **Planilhas (Excel)**."
     )
-    render_aba_terceiros(df_terceiros, gdf_talhoes=gdf_validos, get_engine=get_engine)
     st.stop()
 
 if not _usa_supabase:
@@ -680,9 +640,8 @@ else:
         f"**{_cruzados}** talhões cruzados com o mapa · fonte: {_fonte_planilhas}"
     )
 
-aba_mapa, aba_cobertura, aba_base, aba_calc, aba_terceiros, aba_supabase = st.tabs(
-    ["🗺️ Mapa", "🌾 Cobertura", "🚜 Base/Subsolagem", "🧮 Calculadora NPK",
-     "🚁 Terceiros / Drone", "☁️ Supabase"]
+aba_mapa, aba_cobertura, aba_base, aba_calc, aba_supabase = st.tabs(
+    ["🗺️ Mapa", "🌾 Cobertura", "🚜 Base/Subsolagem", "🧮 Calculadora NPK", "☁️ Supabase"]
 )
 
 # --- Mapa ---
@@ -726,14 +685,6 @@ with aba_mapa:
             on="talhao",
             how="left",
         )
-        if isinstance(painel_f, gpd.GeoDataFrame):
-            gdf_mapa = gpd.GeoDataFrame(
-                gdf_mapa,
-                geometry=painel_f.geometry.name,
-                crs=painel_f.crs,
-            )
-            if gdf_mapa.geometry.name != "geometry":
-                gdf_mapa = gdf_mapa.rename_geometry("geometry")
         gdf_mapa["kg_total_map"] = gdf_mapa["kg_total_map"].fillna(0)
 
         ficha = ficha_talhao_merged(ult_cob, painel_f, st.session_state.talhao_selecionado)
@@ -830,16 +781,6 @@ with aba_calc:
     nao_identificados = df_cobertura[df_cobertura["formula_npk"] == "não identificada"]["fertilizante"].unique()
     if len(nao_identificados) > 0:
         st.warning(f"Fertilizantes sem fórmula reconhecida (cadastrar em FORMULAS_ADUBO): {list(nao_identificados)}")
-
-# --- Terceiros / Drone ---
-with aba_terceiros:
-    try:
-        df_terceiros = _carregar_df_terceiros()
-    except Exception as e:
-        st.error(f"Erro ao ler planilhas de terceiros: {e}")
-        st.exception(e)
-        df_terceiros = pd.DataFrame()
-    render_aba_terceiros(df_terceiros, gdf_talhoes=gdf_validos, get_engine=get_engine)
 
 # --- Supabase ---
 with aba_supabase:
