@@ -29,7 +29,7 @@ from db.conciliacao_adubacao import (
     relatorio_json,
 )
 from db.supabase_io import gravar_base, gravar_cobertura, gravar_talhoes
-from ingestion.dados_painel import descobrir_arquivos_dados_painel
+from ingestion.dados_painel import achar_kml
 from ingestion.inventario_planilhas import (
     carregar_todas_bases,
     carregar_todas_coberturas,
@@ -70,11 +70,12 @@ def main() -> None:
     p.add_argument("--kml", help="KML opcional (senão usa o da pasta dados)")
     args = p.parse_args()
 
-    paths = descobrir_arquivos_dados_painel(args.dados_dir)
-    kml_path = args.kml or (str(paths["kml"]) if paths["kml"] else None)
     _itens, df_excel_raw, df_base_raw = _analisar_pasta(args.dados_dir)
-    cob_path = str(paths["cobertura"])
-    base_path = str(paths["base"]) if paths["base"] else None
+    kml_path = args.kml
+    if not kml_path:
+        kml_found = achar_kml(args.dados_dir)
+        kml_path = str(kml_found) if kml_found else None
+    arquivo_origem = "DADOS_PAINEL_consolidado"
 
     url = os.environ.get("SUPABASE_DB_URL")
     if not url:
@@ -143,7 +144,7 @@ def main() -> None:
         n = gravar_cobertura(
             engine,
             df_gravar,
-            arquivo_origem=os.path.basename(cob_path),
+            arquivo_origem=arquivo_origem,
             projeto_carga=args.projeto,
         )
         print(f"\nGravadas/atualizadas {n} linhas de cobertura (novos + alterados).")
@@ -159,7 +160,12 @@ def main() -> None:
         gdf = ler_talhoes_kml(kml_path)
         gdf = gdf[gdf["talhao"].notna()].copy()
         n_t = gravar_talhoes(engine, gdf)
-        print(f"KML talhões: {n_t} upsert.")
+        print(f"KML talhões: {n_t} upsert ({kml_path}).")
+    else:
+        print(
+            "\nAviso: KML não encontrado em DADOS_PAINEL — cobertura foi gravada; "
+            "mapa/polígonos: copie o .kml para a pasta ou use --kml CAMINHO.kml"
+        )
 
     print("\nAuditoria: SELECT * FROM vw_auditoria_cobertura_por_projeto;")
     print("Lovable: SELECT * FROM vw_api_adubacao_cobertura LIMIT 10;")

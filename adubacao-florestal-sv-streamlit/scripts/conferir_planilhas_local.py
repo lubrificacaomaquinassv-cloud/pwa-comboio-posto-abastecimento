@@ -60,9 +60,13 @@ def main() -> None:
         for x in res["ignorados"]:
             print(f"   - {x['arquivo']}: {x['tipo']} — {x['detalhe']}")
 
+    from ingestion.dados_painel import achar_kml
+
+    kml = achar_kml(pasta)
     try:
-        paths = descobrir_arquivos_dados_painel(pasta)
-        gdf = ler_talhoes_kml(str(paths["kml"]))
+        if not kml:
+            raise FileNotFoundError("Nenhum .kml em DADOS_PAINEL (cobertura ainda pode subir ao Supabase)")
+        gdf = ler_talhoes_kml(str(kml))
         gdf_ok = gdf[gdf["talhao"].notna()]
         from ingestion.inventario_planilhas import carregar_todas_coberturas
 
@@ -70,7 +74,7 @@ def main() -> None:
         if len(df):
             tal_kml = set(gdf_ok["talhao"].astype(str).str.upper())
             tal_xl = set(df["talhao"].astype(str).str.upper())
-            print(f"\n--- KML: {paths['kml'].name} ---")
+            print(f"\n--- KML: {kml.name} ---")
             print(f"Polígonos: {len(gdf_ok)} | Cruzamento planilha×mapa: {len(tal_kml & tal_xl)} talhões")
     except FileNotFoundError as e:
         print("\nKML:", e)

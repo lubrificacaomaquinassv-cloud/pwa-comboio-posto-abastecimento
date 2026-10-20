@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from ingestion.excel_parser import ler_adubacao_base, ler_adubacao_cobertura
+from ingestion.excel_parser import (
+    _localizar_cabecalho_cobertura,
+    _norm_header,
+    ler_adubacao_base,
+    ler_adubacao_cobertura,
+)
 
 
 @dataclass
@@ -30,12 +35,16 @@ def _detectar_tipo_bruto(caminho: Path) -> tuple[str, list[str], str]:
             return "erro", abas, str(e)
         if raw.shape[1] < 2:
             continue
-        col_b = raw[1].astype(str)
-        if col_b.str.contains("Talhão", na=False).any():
+        if _localizar_cabecalho_cobertura(raw) is not None:
             return "cobertura_sv", abas, f"aba '{aba}' formato Cobertura SV"
-        if col_b.str.contains("Horto", na=False).any():
-            return "base_subsolagem_sv", abas, f"aba '{aba}' formato Base/Subsolagem SV"
-    return "desconhecido", abas, "nenhuma aba com cabeçalho Talhão ou Horto (coluna B)"
+        for _, row in raw.iterrows():
+            for val in row:
+                h = _norm_header(val)
+                if h == "horto":
+                    return "base_subsolagem_sv", abas, f"aba '{aba}' formato Base/Subsolagem SV"
+                if h in ("talhao",):
+                    break
+    return "desconhecido", abas, "nenhuma aba com cabeçalho Talhão ou Horto detectado"
 
 
 def inventariar_pasta(pasta: str | Path) -> list[PlanilhaInventario]:
@@ -58,7 +67,17 @@ def inventariar_pasta(pasta: str | Path) -> list[PlanilhaInventario]:
                     inv.tipo = "vazio"
                     inv.detalhe = "formato reconhecido mas 0 linhas de dados"
             elif tipo == "base_subsolagem_sv":
-                df = ler_adubacao_base(str(path))
+                try:
+                    df = ler_adubacao_base(str(path))
+                except (IndexError, KeyError, ValueError) as e:
+                    inv.tipo = "erro"
+                    inv.detalhe = f"base/subsolagem: {e}"
+                    df = pd.DataFrame()
+                else:
+                    pass
+                if inv.tipo == "erro":
+                    itens.append(inv)
+                    continue
                 inv.linhas_lidas = len(df)
                 inv.talhoes = int(df["talhao"].nunique()) if len(df) else 0
                 if inv.linhas_lidas == 0:

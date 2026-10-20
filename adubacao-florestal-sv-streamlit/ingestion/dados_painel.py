@@ -18,9 +18,7 @@ def descobrir_arquivos_dados_painel(pasta: str | os.PathLike) -> dict[str, Path 
         raise FileNotFoundError(f"Pasta de dados não encontrada: {root}")
 
     kmls = sorted(root.glob("*.kml"), key=lambda p: p.stat().st_size, reverse=True)
-    if not kmls:
-        raise FileNotFoundError(f"Nenhum .kml em {root}")
-    kml = kmls[0]
+    kml = kmls[0] if kmls else None
 
     xlsx = list(root.glob("*.xlsx"))
     cobertura = _primeiro_match(xlsx, r"cobertura", case_insensitive=True)
@@ -33,6 +31,20 @@ def descobrir_arquivos_dados_painel(pasta: str | os.PathLike) -> dict[str, Path 
     base = _primeiro_match(xlsx, r"base|subsol", case_insensitive=True)
 
     return {"kml": kml, "cobertura": cobertura, "base": base}
+
+
+def achar_kml(pasta: str | os.PathLike) -> Path | None:
+    root = Path(pasta).expanduser().resolve()
+    kmls = sorted(root.glob("*.kml"), key=lambda p: p.stat().st_size, reverse=True)
+    if kmls:
+        return kmls[0]
+    for extra in (
+        root.parent / "fazenda_santa_virginia_completo.kml",
+        Path(os.path.expanduser("~")) / "Desktop" / "fazenda_santa_virginia_completo.kml",
+    ):
+        if extra.is_file():
+            return extra
+    return None
 
 
 def _primeiro_match(files: list[Path], pattern: str, *, case_insensitive: bool) -> Path | None:

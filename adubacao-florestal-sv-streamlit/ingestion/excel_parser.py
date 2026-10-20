@@ -26,6 +26,25 @@ COLS_BASE_BLOCO = [
 ]
 
 
+def _norm_header(val) -> str:
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return ""
+    s = str(val).strip().lower()
+    for a, b in (("ã", "a"), ("á", "a"), ("â", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"), ("ç", "c")):
+        s = s.replace(a, b)
+    return s
+
+
+def _localizar_cabecalho_cobertura(raw: pd.DataFrame) -> tuple[int, int] | None:
+    """Linha e coluna onde aparece 'Talhão' (qualquer coluna, não só B)."""
+    for idx in raw.index:
+        row = raw.loc[idx]
+        for col_idx, val in enumerate(row):
+            if _norm_header(val) == "talhao":
+                return int(idx), int(col_idx)
+    return None
+
+
 def ler_adubacao_cobertura(caminho_xlsx: str) -> pd.DataFrame:
     """Le todas as abas do arquivo de Adubacao de Cobertura e retorna um DataFrame unico,
     com uma coluna 'retiro' preenchida a partir do nome da aba."""
@@ -35,13 +54,13 @@ def ler_adubacao_cobertura(caminho_xlsx: str) -> pd.DataFrame:
     for aba in xls.sheet_names:
         raw = pd.read_excel(caminho_xlsx, sheet_name=aba, header=None)
 
-        linhas_header = raw.index[raw[1] == "Talhão"]
-        if len(linhas_header) == 0:
-            continue  # aba sem o formato esperado, ignora
-        linha_header = linhas_header[0]
-        inicio_dados = linha_header + 3  # pula a linha 'Recomendação/Realizado' e uma linha em branco
+        loc = _localizar_cabecalho_cobertura(raw)
+        if loc is None:
+            continue
+        linha_header, col_start = loc
+        inicio_dados = linha_header + 3  # pula 'Recomendação/Realizado' + linha em branco
 
-        bloco = raw.iloc[inicio_dados:, 1:10].copy()
+        bloco = raw.iloc[inicio_dados:, col_start : col_start + 9].copy()
         bloco.columns = COLS_COBERTURA
 
         # corta no primeiro talhao vazio (fim da tabela, antes do resumo "Consumo total")
