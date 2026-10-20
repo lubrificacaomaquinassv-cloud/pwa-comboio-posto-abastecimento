@@ -53,6 +53,7 @@ Write-Host ""
 Write-Host "Pasta deste script:" -ForegroundColor Cyan
 Write-Host "  $ScriptDir"
 Write-Host ""
+Write-Host "Feche a janela do painel antigo no navegador." -ForegroundColor Yellow
 Write-Host "Duplo clique em:" -ForegroundColor Yellow
-Write-Host "  ABRIR_PAINEL_ADUBACAO.bat"
-Write-Host "  (ou RODAR_PAINEL_LOCAL.bat na mesma pasta)"
+Write-Host "  PARAR_E_ABRIR_PAINEL.bat   (recomendado - reinicia tudo)"
+Write-Host "  ou ABRIR_PAINEL_ADUBACAO.bat"
