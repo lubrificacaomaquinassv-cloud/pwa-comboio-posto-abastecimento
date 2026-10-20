@@ -103,6 +103,13 @@ def get_engine():
         url = st.secrets.get("SUPABASE_DB_URL") or os.environ.get("SUPABASE_DB_URL")
         if not url:
             return None
+        url = str(url).strip()
+        if url.startswith("https://") or url.startswith("http://"):
+            return None
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+        if not url.startswith("postgresql+"):
+            return None
         return create_engine(url)
     except Exception:
         return None
@@ -132,6 +139,22 @@ if _usa_supabase and not _supabase_ok:
         "- `SUPABASE_URL` + `SUPABASE_KEY` (de preferência **service_role** para ler `fato_adubacao_*`)."
     )
     st.stop()
+
+_secrets_path = os.path.join(os.path.dirname(__file__), ".streamlit", "secrets.toml")
+_tem_secrets_arquivo = os.path.isfile(_secrets_path)
+if _tem_secrets_arquivo and _engine is None and not _rest_ok:
+    st.sidebar.error(
+        "`.streamlit/secrets.toml` existe, mas a URL está errada. "
+        "Use **postgresql+psycopg://** (pooler), não https://. "
+        "Rode **CONFIGURAR_PAINEL_LOCAL.ps1** de novo."
+    )
+elif _engine is not None:
+    st.sidebar.success("Supabase Postgres (pooler) configurado.")
+elif not _usa_supabase and _tem_secrets_arquivo:
+    st.sidebar.warning(
+        "Você está em **Planilhas (Excel)**. Para mapa + adubação do banco, "
+        "marque **☁️ Supabase (oficial)** acima."
+    )
 
 _dados_dir = os.path.join(os.path.dirname(__file__), "dados")
 _kml_default = os.path.join(_dados_dir, "fazenda_santa_virginia_completo.kml")
