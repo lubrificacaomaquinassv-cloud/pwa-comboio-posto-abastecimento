@@ -23,13 +23,17 @@ A pasta correta no seu PC:
 ## Passo 1 — Conferir planilhas (SEM banco, não falha por senha)
 
 1. Abra **PowerShell**.
-2. Vá na pasta do projeto (onde está `app.py`), por exemplo:
+2. Entre na pasta do projeto (**não** use um caminho que não exista — se `pwa-adubacao` não estiver no Desktop, clone):
 
 ```powershell
-cd C:\Users\hmauricio\Desktop\pwa-adubacao\adubacao-florestal-sv-streamlit
+cd $env:USERPROFILE\Desktop
+git clone https://github.com/lubrificacaomaquinassv-cloud/pwa-comboio-posto-abastecimento.git
+cd pwa-comboio-posto-abastecimento\adubacao-florestal-sv-streamlit
+git checkout cursor/finalizar-adubacao-dados-fbe9
+pip install -r requirements.txt
 ```
 
-(Se o clone estiver em outro lugar, use a pasta que contém `scripts\`.)
+(Ache o projeto: `Get-ChildItem $env:USERPROFILE\Desktop -Recurse -Filter conferir_planilhas_local.py`)
 
 3. Rode **só isto**:
 

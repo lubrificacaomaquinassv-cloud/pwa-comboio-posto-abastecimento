@@ -29,7 +29,15 @@ SELECT
     c.projeto_carga,
     c.updated_at
 FROM fato_adubacao_cobertura c
-WHERE c.ativo IS DISTINCT FROM FALSE;
+WHERE (
+    NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'fato_adubacao_cobertura'
+          AND column_name = 'ativo'
+    )
+    OR c.ativo IS DISTINCT FROM FALSE
+);
 
 -- 2) Último lançamento por talhão (mapa / ficha)
 CREATE OR REPLACE VIEW vw_adubacao_ultimo_por_talhao AS
@@ -111,7 +119,15 @@ SELECT
     b.projeto_carga,
     b.updated_at
 FROM fato_adubacao_base b
-WHERE b.ativo IS DISTINCT FROM FALSE;
+WHERE (
+    NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'fato_adubacao_base'
+          AND column_name = 'ativo'
+    )
+    OR b.ativo IS DISTINCT FROM FALSE
+);
 
 COMMENT ON VIEW vw_api_adubacao_cobertura IS
     'Lovable/PostgREST: lançamentos de cobertura (NPK + doses). Mesma base do painel Streamlit.';
