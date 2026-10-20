@@ -477,21 +477,34 @@ def render_mapa_adubacao(
         _placeholder = "— escolha —"
         opcoes = [_placeholder] + lista
         atual = st.session_state.get("talhao_selecionado")
-        idx = opcoes.index(atual) if atual in opcoes else 0
+        key_buscar = f"buscar_talhao{key_suffix}"
+        if atual in opcoes:
+            st.session_state[key_buscar] = atual
+        elif key_buscar not in st.session_state:
+            st.session_state[key_buscar] = _placeholder
+
+        def _on_buscar_talhao() -> None:
+            sel = st.session_state.get(key_buscar)
+            if sel == _placeholder:
+                st.session_state.talhao_selecionado = None
+                st.session_state["sidebar_ver_talhao"] = "(nenhum)"
+            else:
+                t = normalizar_codigo_talhao(sel)
+                st.session_state.talhao_selecionado = t
+                if t:
+                    st.session_state["sidebar_ver_talhao"] = t
+
         st.markdown(
             '<div class="sv-map-panel"><div class="sv-map-panel-title">BUSCAR TALHÃO</div></div>',
             unsafe_allow_html=True,
         )
-        escolhido = st.selectbox(
+        st.selectbox(
             "Buscar talhão",
             opcoes,
-            index=idx,
             label_visibility="collapsed",
-            key=f"buscar_talhao{key_suffix}",
+            key=key_buscar,
+            on_change=_on_buscar_talhao,
         )
-        if escolhido != _placeholder and escolhido != atual:
-            st.session_state.talhao_selecionado = normalizar_codigo_talhao(escolhido)
-            st.rerun()
 
     ficha_slot.markdown(html_ficha_lateral(ficha), unsafe_allow_html=True)
     return clicado

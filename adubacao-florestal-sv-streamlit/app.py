@@ -44,10 +44,10 @@ from db.supabase_rest import (
     rest_disponivel,
 )
 from ingestion.dados_painel import descobrir_arquivos_dados_painel
-from ingestion.talhao_codigo import normalizar_coluna_talhao
+from ingestion.talhao_codigo import normalizar_codigo_talhao, normalizar_coluna_talhao
 from mapa_adubacao import painel_ficha_talhao_streamlit, render_mapa_adubacao
 
-PAINEL_BUILD = "2026.10.20-cobertura-dedupe-v6"
+PAINEL_BUILD = "2026.10.20-talhao-sync-v7"
 
 # Valores de "retiro" que vêm de abas/nomes de planilha — não usar como filtro de fazenda
 _RETIRO_PLANILHA_IGNORAR = frozenset(
@@ -649,21 +649,31 @@ _lista_talhoes_sidebar = sorted(
     key=lambda x: (len(x), x),
 ) if not painel_f.empty else []
 _op_sidebar = ["(nenhum)"] + _lista_talhoes_sidebar
-_atual_sidebar = st.session_state.get("talhao_selecionado")
-_idx_sidebar = _op_sidebar.index(_atual_sidebar) if _atual_sidebar in _op_sidebar else 0
-_esc_sidebar = st.sidebar.selectbox(
+_talhao_ativo = st.session_state.get("talhao_selecionado")
+if _talhao_ativo and _talhao_ativo not in _lista_talhoes_sidebar:
+    st.session_state.talhao_selecionado = None
+    _talhao_ativo = None
+
+
+def _on_sidebar_ver_talhao() -> None:
+    sel = st.session_state.get("sidebar_ver_talhao")
+    if sel == "(nenhum)":
+        st.session_state.talhao_selecionado = None
+    else:
+        st.session_state.talhao_selecionado = normalizar_codigo_talhao(sel)
+
+
+if _talhao_ativo in _op_sidebar:
+    st.session_state["sidebar_ver_talhao"] = _talhao_ativo
+else:
+    st.session_state["sidebar_ver_talhao"] = "(nenhum)"
+
+st.sidebar.selectbox(
     "Número do talhão",
     _op_sidebar,
-    index=_idx_sidebar,
     key="sidebar_ver_talhao",
+    on_change=_on_sidebar_ver_talhao,
 )
-if _esc_sidebar == "(nenhum)":
-    if st.session_state.talhao_selecionado is not None:
-        st.session_state.talhao_selecionado = None
-        st.rerun()
-elif _esc_sidebar != st.session_state.talhao_selecionado:
-    st.session_state.talhao_selecionado = str(_esc_sidebar).strip().upper()
-    st.rerun()
 
 st.sidebar.caption(f"Versão do painel: **{PAINEL_BUILD}**")
 
@@ -683,6 +693,10 @@ _pct_base = _pct_area_aplicada(painel_f, "area_subsolada_ha")
 col2.metric("% Cobertura aplicada", f"{_pct_cob:.1f}%" if _pct_cob is not None else "—")
 col3.metric("% Base/Subsolagem", f"{_pct_base:.1f}%" if _pct_base is not None else "—")
 col4.metric("Talhões com alerta de sequência", int(painel_f["alerta_sequencia"].sum()))
+st.caption(
+    "Os KPIs acima seguem os filtros **Retiro** e **Classe** na barra lateral. "
+    "A **ficha do talhão** (aba Mapa) muda ao escolher um talhão ou clicar no polígono."
+)
 
 _cob_talhoes = set(df_cobertura["talhao"].dropna().unique()) if not df_cobertura.empty else set()
 _map_talhoes = set(painel_f["talhao"].dropna().unique()) if not painel_f.empty else set()
@@ -751,11 +765,10 @@ with aba_mapa:
         )
         gdf_mapa["kg_total_map"] = gdf_mapa["kg_total_map"].fillna(0)
 
-        ficha = ficha_talhao_merged(ult_cob, painel_f, st.session_state.talhao_selecionado)
         try:
             clicado = render_mapa_adubacao(
                 gdf_mapa,
-                ficha,
+                ficha_talhao_merged(ult_cob, painel_f, st.session_state.talhao_selecionado),
                 key_suffix="_prod",
                 talhoes_lista=sorted(
                     gdf_mapa["talhao"].dropna().astype(str).unique().tolist(),
@@ -763,10 +776,14 @@ with aba_mapa:
                 ),
             )
             if clicado and clicado != st.session_state.talhao_selecionado:
-                st.session_state.talhao_selecionado = clicado
+                st.session_state.talhao_selecionado = normalizar_codigo_talhao(clicado)
+                if st.session_state.talhao_selecionado in _op_sidebar:
+                    st.session_state["sidebar_ver_talhao"] = st.session_state.talhao_selecionado
+                st.session_state["buscar_talhao_prod"] = st.session_state.talhao_selecionado
                 st.rerun()
-            ficha = ficha_talhao_merged(ult_cob, painel_f, st.session_state.talhao_selecionado)
-            painel_ficha_talhao_streamlit(ficha)
+            painel_ficha_talhao_streamlit(
+                ficha_talhao_merged(ult_cob, painel_f, st.session_state.talhao_selecionado)
+            )
         except Exception as e:
             st.error(f"Erro ao renderizar o mapa: {e}")
             st.exception(e)
