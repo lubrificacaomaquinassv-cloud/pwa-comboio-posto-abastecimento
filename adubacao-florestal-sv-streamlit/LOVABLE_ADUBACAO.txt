@@ -1,0 +1,27 @@
+LOVABLE — Adubação Florestal (Santa Virgínia)
+============================================
+
+Mesma fonte do Streamlit: tabelas `fato_adubacao_cobertura` e `fato_adubacao_base`.
+Execute no Supabase: sql/003, sql/004 (opcional legado), sql/005_views_lovable_adubacao.sql.
+
+Views para o Lovable (PostgREST / REST API):
+
+  vw_api_adubacao_cobertura     → 1 linha = 1 aplicação de cobertura (+ NPK)
+  vw_adubacao_ultimo_por_talhao → último lançamento por talhão (ficha/mapa)
+  vw_adubacao_resumo_retiro     → KPIs por retiro/horto
+  vw_adubacao_por_talhao        → agregado por talhão
+  vw_adubacao_mapa              → join cadastro dim_talhao_florestal
+  vw_api_adubacao_base          → subsolagem / base
+
+Campos principais (vw_api_adubacao_cobertura):
+  talhao, retiro, fertilizante, formula_npk, data,
+  area_total_ha, area_floresta_ha, kg_total,
+  dose_recomendada_ha, dose_realizada_ha, realizado_kg_ha,
+  n_kg, p2o5_kg, k2o_kg, operador
+
+Mapa:
+  Join talhao com public.dim_talhoes (Apontamento) ou vw_adubacao_mapa.
+
+Carga dos dados:
+  Planilhas em DADOS_PAINEL → scripts/analisar_e_sync_adubacao.py ou CARGA_DADOS_PAINEL.ps1
+  → grava em fato_adubacao_* → Lovable e Streamlit leem as views acima.

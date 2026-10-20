@@ -1,0 +1,10 @@
+Coloque aqui os mesmos arquivos da pasta Desktop\DADOS_PAINEL:
+  - fazenda_santa_virginia_completo.kml (ou outro .kml principal)
+  - planilha de Cobertura (.xlsx, nome com "cobertura" se possível)
+  - planilha Base/Subsolagem (.xlsx, opcional)
+
+Depois de commit + push, o GitHub Actions "Sync DADOS_PAINEL → Supabase" envia tudo ao banco.
+O Streamlit Cloud lê só do Supabase — sem upload a cada login.
+
+Alternativa no PC (sem commitar planilhas no Git):
+  powershell -File scripts\CARGA_DADOS_PAINEL.ps1

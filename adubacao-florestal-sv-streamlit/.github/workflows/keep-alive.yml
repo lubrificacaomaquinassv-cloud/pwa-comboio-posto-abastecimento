@@ -1,0 +1,26 @@
+name: Keep Streamlit Apps Awake
+
+on:
+  schedule:
+    - cron: '0 6 * * 1-6'  # 3h BRT (UTC-3); com atraso GitHub + script, apps acordam ~6h30–7h30
+  workflow_dispatch:  # permite disparo manual pra testar
+
+jobs:
+  wake-apps:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Playwright and dependencies
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Run wake script
+        run: python wake_apps.py
