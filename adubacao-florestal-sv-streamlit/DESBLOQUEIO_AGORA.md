@@ -41,18 +41,18 @@ Você ficou preso no **005 mapa**, mas o passo que falta é **carga no PC**, nã
 
 ### C) Carga no PC (obrigatório)
 
+**IMPORTANTE:** no GitHub, a pasta `adubacao-florestal-sv-streamlit` **só existe no branch** `cursor/finalizar-adubacao-dados-fbe9`, **não** no `main`. Por isso o `cd ...\adubacao-florestal-sv-streamlit` falhou depois do clone.
+
 ```powershell
 cd $env:USERPROFILE\Desktop
 git clone https://github.com/lubrificacaomaquinassv-cloud/pwa-comboio-posto-abastecimento.git
-cd pwa-comboio-posto-abastecimento\adubacao-florestal-sv-streamlit
+cd pwa-comboio-posto-abastecimento
+git fetch origin
 git checkout cursor/finalizar-adubacao-dados-fbe9
-pip install -r requirements.txt
-
-$env:SUPABASE_DB_URL = "postgresql+psycopg://postgres.azhpxhrwhegfysoeqmft:SUA_SENHA@aws-1-sa-east-1.pooler.supabase.com:6543/postgres"
-
-python scripts/conferir_planilhas_local.py "C:\Users\hmauricio\Desktop\DADOS_PAINEL"
-python scripts/analisar_e_sync_adubacao.py --dados-dir "C:\Users\hmauricio\Desktop\DADOS_PAINEL" --sync --modo por_talhao
+powershell -ExecutionPolicy Bypass -File adubacao-florestal-sv-streamlit\RODAR_CARGA_WINDOWS.ps1
 ```
+
+(O script pede `SUPABASE_DB_URL` se ainda não estiver definida.)
 
 Isso grava **planilhas** em `fato_adubacao_*` e **KML** em `dim_talhao_florestal.geom`.
 
