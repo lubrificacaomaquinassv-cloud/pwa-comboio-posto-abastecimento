@@ -66,6 +66,24 @@ def dose_por_ha(kg_adubo: float, area_ha: float, pct_n: float, pct_p: float, pct
     }
 
 
+_COLS_CALCULADORA = (
+    "formula_npk",
+    "N_kg",
+    "P2O5_kg",
+    "K2O_kg",
+    "N_kg_ha",
+    "P2O5_kg_ha",
+    "K2O_kg_ha",
+)
+
+
+def deduplicar_colunas_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove nomes de coluna repetidos (mantém a primeira). Evita crash do st.dataframe/pyarrow."""
+    if df.empty or not df.columns.duplicated().any():
+        return df
+    return df.loc[:, ~df.columns.duplicated()].copy()
+
+
 def aplicar_calculadora_no_df(
     df: pd.DataFrame,
     col_fertilizante: str,
@@ -74,7 +92,11 @@ def aplicar_calculadora_no_df(
 ) -> pd.DataFrame:
     """Aplica a calculadora de NPK em todas as linhas de um DataFrame de aplicacoes,
     adicionando as colunas: formula_npk, N_kg, P2O5_kg, K2O_kg, N_kg_ha, P2O5_kg_ha, K2O_kg_ha."""
-    df = df.copy()
+    if df.empty:
+        return df
+    df = deduplicar_colunas_df(df.copy())
+    # Supabase já grava N_kg etc.; recalcular sem duplicar nomes de coluna
+    df = df.drop(columns=[c for c in _COLS_CALCULADORA if c in df.columns], errors="ignore")
     formulas = df[col_fertilizante].apply(extrair_formula)
 
     df["formula_npk"] = formulas.apply(lambda f: f"{f[0]}-{f[1]}-{f[2]}" if f else "não identificada")
@@ -93,7 +115,7 @@ def aplicar_calculadora_no_df(
     )
     df = pd.concat([df, dose_cols], axis=1)
 
-    return df
+    return deduplicar_colunas_df(df)
 
 
 if __name__ == "__main__":

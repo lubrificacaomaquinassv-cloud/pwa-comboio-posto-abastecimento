@@ -20,7 +20,12 @@ import streamlit as st
 from ingestion.kml_parser import ler_talhoes_kml, talhoes_com_codigo_ambiguo
 from ingestion.excel_parser import ler_adubacao_cobertura, ler_adubacao_base
 from ingestion.pdf_retiro_parser import ler_pasta_pdfs_retiro
-from npk_calculator import aplicar_calculadora_no_df, calcular_npk_aplicado, dose_por_ha
+from npk_calculator import (
+    aplicar_calculadora_no_df,
+    calcular_npk_aplicado,
+    deduplicar_colunas_df,
+    dose_por_ha,
+)
 from db.carga_supabase import sync_pasta_dados_painel
 from db.supabase_url import SECRETS_PATH, create_supabase_engine, ler_supabase_db_url
 from db.supabase_io import (
@@ -42,7 +47,7 @@ from ingestion.dados_painel import descobrir_arquivos_dados_painel
 from ingestion.talhao_codigo import normalizar_coluna_talhao
 from mapa_adubacao import painel_ficha_talhao_streamlit, render_mapa_adubacao
 
-PAINEL_BUILD = "2026.10.20-mapa-kpi-v5"
+PAINEL_BUILD = "2026.10.20-cobertura-dedupe-v6"
 
 # Valores de "retiro" que vêm de abas/nomes de planilha — não usar como filtro de fazenda
 _RETIRO_PLANILHA_IGNORAR = frozenset(
@@ -794,7 +799,7 @@ with aba_cobertura:
     )
 
     st.subheader("Lançamentos brutos (planilha de Cobertura)")
-    st.dataframe(df_cobertura, use_container_width=True)
+    st.dataframe(deduplicar_colunas_df(df_cobertura), use_container_width=True)
 
 # --- Base/Subsolagem ---
 with aba_base:
