@@ -219,6 +219,15 @@ def desativar_cobertura_fora_da_planilha_por_talhao(
     """
     from sqlalchemy import text
 
+    from db.supabase_io import _coluna_existe
+
+    if not _coluna_existe(engine, "fato_adubacao_cobertura", "ativo"):
+        print(
+            "Aviso: coluna 'ativo' ausente — rode sql/004_controle_projeto_legado.sql "
+            "(sync continua só com upsert, sem desativar legado)."
+        )
+        return 0
+
     ex = _prep_cobertura(df_excel)
     if ex.empty:
         return 0
