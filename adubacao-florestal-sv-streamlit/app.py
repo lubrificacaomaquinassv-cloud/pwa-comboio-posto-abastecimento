@@ -84,7 +84,10 @@ _candidatos_logo = [
 ]
 _logo_path = next((p for p in _candidatos_logo if os.path.exists(p)), None)
 if _logo_path:
-    st.sidebar.image(_logo_path, use_container_width=True)
+    try:
+        st.sidebar.image(_logo_path, use_container_width=True)
+    except TypeError:
+        st.sidebar.image(_logo_path, use_column_width=True)
 
 
 # -----------------------------------------------------------------
