@@ -3,14 +3,19 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from typing import Literal
 
 import folium
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 import streamlit as st
+from folium.features import GeoJsonPopup, GeoJsonTooltip
 from shapely.geometry import Point
 from streamlit_folium import st_folium
+
+from ingestion.talhao_codigo import normalizar_codigo_talhao
 
 Camada = Literal["Satélite", "Terreno"]
 PintarPor = Literal["Cobertura", "Hectares", "Valor"]
@@ -185,6 +190,17 @@ def _folium_mapa(
         control_scale=False,
     )
 
+    tooltip = GeoJsonTooltip(
+        fields=["talhao"],
+        aliases=["Talhão:"],
+        sticky=True,
+        labels=True,
+    )
+    popup = GeoJsonPopup(
+        fields=["talhao"],
+        aliases=["Talhão:"],
+        labels=True,
+    )
     folium.GeoJson(
         geojson_str,
         style_function=lambda feat: {
@@ -194,7 +210,8 @@ def _folium_mapa(
             "fillOpacity": 0.72,
         },
         highlight_function=lambda x: {"weight": 3, "color": "#4caf50", "fillOpacity": 0.85},
-        tooltip=folium.GeoJsonTooltip(fields=["talhao"], aliases=["Talhão:"]),
+        tooltip=tooltip,
+        popup=popup,
     ).add_to(mapa)
 
     if rotulos_json:
@@ -214,28 +231,94 @@ def _folium_mapa(
     return mapa
 
 
+_RX_TALHAO_TEXTO = re.compile(
+    r"(?:talh[aã]o|talhao)\s*:?\s*([0-9]+[A-Z0-9\-]*)",
+    re.IGNORECASE,
+)
+
+
+def _talhao_de_texto(val) -> str | None:
+    if val is None:
+        return None
+    if isinstance(val, dict):
+        for v in val.values():
+            t = _talhao_de_texto(v)
+            if t:
+                return t
+        return None
+    if isinstance(val, (list, tuple)):
+        for item in val:
+            t = _talhao_de_texto(item)
+            if t:
+                return t
+        return None
+    s = str(val).strip()
+    if not s:
+        return None
+    m = _RX_TALHAO_TEXTO.search(s)
+    if m:
+        return normalizar_codigo_talhao(m.group(1))
+    if re.fullmatch(r"[0-9]+[A-Z0-9\-]*", s, re.I):
+        return normalizar_codigo_talhao(s)
+    return None
+
+
+def _talhao_por_ponto(gdf: pd.DataFrame, lat: float, lng: float) -> str | None:
+    if gdf is None or gdf.empty or "geometry" not in gdf.columns:
+        return None
+    geo = gdf
+    if isinstance(geo, gpd.GeoDataFrame):
+        if geo.crs is None:
+            geo = geo.set_crs(4326)
+        elif geo.crs.to_epsg() != 4326:
+            geo = geo.to_crs(4326)
+    pt = gpd.GeoDataFrame(geometry=[Point(float(lng), float(lat))], crs="EPSG:4326")
+    try:
+        hits = gpd.sjoin(geo, pt, predicate="contains", how="inner")
+    except Exception:
+        pt_sh = Point(float(lng), float(lat))
+        mask = geo.geometry.contains(pt_sh)
+        if not mask.any():
+            mask = geo.geometry.intersects(pt_sh)
+        if not mask.any():
+            return None
+        hits = geo.loc[mask]
+    if hits.empty:
+        return None
+    if len(hits) > 1:
+        hits = hits.assign(_area=hits.geometry.area).sort_values("_area")
+    return normalizar_codigo_talhao(hits.iloc[0]["talhao"])
+
+
 def _talhao_do_clique(out: dict | None, gdf: pd.DataFrame) -> str | None:
-    """Resolve talhão pelo clique Folium (properties) ou ponto dentro do polígono."""
+    """Resolve talhão: tooltip/popup do GeoJSON, properties ou ponto no polígono."""
     if not out:
         return None
+
+    for key in ("last_object_clicked_tooltip", "last_object_clicked_popup"):
+        t = _talhao_de_texto(out.get(key))
+        if t:
+            return t
+
     obj = out.get("last_object_clicked")
     if isinstance(obj, dict):
         props = obj.get("properties") or {}
         tal = props.get("talhao")
         if tal:
-            return str(tal).strip().upper()
-    click = out.get("last_clicked")
-    if click and gdf is not None and len(gdf) > 0 and "geometry" in gdf.columns:
+            return normalizar_codigo_talhao(tal)
+        lat = obj.get("lat")
+        lng = obj.get("lng")
+        if lat is not None and lng is not None:
+            t = _talhao_por_ponto(gdf, float(lat), float(lng))
+            if t:
+                return t
+
+    click = out.get("last_clicked") or out.get("last_object_clicked")
+    if isinstance(click, dict):
         lat = click.get("lat")
         lng = click.get("lng")
         if lat is not None and lng is not None:
-            pt = Point(float(lng), float(lat))
-            mask = gdf.geometry.contains(pt)
-            if mask.any():
-                hits = gdf.loc[mask]
-                if len(hits) > 1:
-                    hits = hits.assign(_area=hits.geometry.area).sort_values("_area")
-                return str(hits.iloc[0]["talhao"]).strip().upper()
+            return _talhao_por_ponto(gdf, float(lat), float(lng))
     return None
 
 
@@ -243,6 +326,7 @@ def render_mapa_adubacao(
     gdf_mapa: pd.DataFrame,
     ficha: dict | None,
     key_suffix: str = "",
+    talhoes_lista: list[str] | None = None,
 ) -> str | None:
     """
     Renderiza mapa + painéis flutuantes. Retorna talhão clicado (se houver).
@@ -280,7 +364,7 @@ def render_mapa_adubacao(
             value=True,
             key=f"rotulos_talhao{key_suffix}",
         )
-        st.markdown(html_ficha_lateral(ficha), unsafe_allow_html=True)
+        ficha_slot = st.empty()
 
     gdf = gdf_mapa.copy()
     gdf["cor"] = _montar_cores(gdf, pintar)  # type: ignore[arg-type]
@@ -306,9 +390,40 @@ def render_mapa_adubacao(
             mapa,
             width=None,
             height=620,
-            returned_objects=["last_object_clicked", "last_clicked"],
+            returned_objects=[
+                "last_object_clicked",
+                "last_clicked",
+                "last_object_clicked_tooltip",
+                "last_object_clicked_popup",
+                "last_object_clicked_count",
+            ],
             key=f"mapa_adubacao{key_suffix}",
             use_container_width=True,
         )
 
-    return _talhao_do_clique(out, gdf)
+    clicado = _talhao_do_clique(out, gdf)
+
+    with col_ui:
+        opcoes = talhoes_lista or sorted(
+            gdf["talhao"].dropna().astype(str).unique().tolist(),
+            key=lambda x: (len(x), x),
+        )
+        atual = st.session_state.get("talhao_selecionado")
+        idx = opcoes.index(atual) if atual in opcoes else 0
+        st.markdown(
+            '<div class="sv-map-panel"><div class="sv-map-panel-title">BUSCAR TALHÃO</div></div>',
+            unsafe_allow_html=True,
+        )
+        escolhido = st.selectbox(
+            "buscar_talhao",
+            opcoes,
+            index=idx,
+            label_visibility="collapsed",
+            key=f"buscar_talhao{key_suffix}",
+        )
+        if escolhido and escolhido != atual:
+            st.session_state.talhao_selecionado = str(escolhido).strip().upper()
+            st.rerun()
+
+    ficha_slot.markdown(html_ficha_lateral(ficha), unsafe_allow_html=True)
+    return clicado

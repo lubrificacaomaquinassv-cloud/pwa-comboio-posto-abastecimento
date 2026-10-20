@@ -596,9 +596,17 @@ with aba_mapa:
 
         ficha = ficha_talhao_merged(ult_cob, painel_f, st.session_state.talhao_selecionado)
         try:
-            clicado = render_mapa_adubacao(gdf_mapa, ficha, key_suffix="_prod")
+            clicado = render_mapa_adubacao(
+                gdf_mapa,
+                ficha,
+                key_suffix="_prod",
+                talhoes_lista=sorted(
+                    gdf_mapa["talhao"].dropna().astype(str).unique().tolist(),
+                    key=lambda x: (len(x), x),
+                ),
+            )
             if clicado and clicado != st.session_state.talhao_selecionado:
-                st.session_state.talhao_selecionado = str(clicado).strip().upper()
+                st.session_state.talhao_selecionado = clicado
                 st.rerun()
         except Exception as e:
             st.error(f"Erro ao renderizar o mapa: {e}")
