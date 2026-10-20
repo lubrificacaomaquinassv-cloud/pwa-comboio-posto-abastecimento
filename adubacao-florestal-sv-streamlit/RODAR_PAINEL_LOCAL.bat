@@ -7,7 +7,8 @@ echo Pasta: %CD%
 echo.
 
 where py >nul 2>&1 && set PY=py || set PY=python
-%PY% -m pip install -q -r requirements.txt
+echo Instalando dependencias (Streamlit 1.38+)...
+%PY% -m pip install -q -U "streamlit>=1.38" -r requirements.txt
 if errorlevel 1 (
     echo ERRO: instale Python 3.11+ e adicione ao PATH.
     pause
