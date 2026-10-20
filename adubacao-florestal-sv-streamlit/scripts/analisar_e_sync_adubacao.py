@@ -75,14 +75,42 @@ def main() -> None:
 
     url = os.environ.get("SUPABASE_DB_URL")
     if not url:
-        print("\nDefina SUPABASE_DB_URL para comparar com o Supabase.", file=sys.stderr)
+        print("\nPara falar com o Supabase, defina SUPABASE_DB_URL (veja FINALIZAR_PAINEL.md).", file=sys.stderr)
         sys.exit(1 if args.sync else 0)
 
+    from sqlalchemy import text
+
     engine = create_engine(url)
-    df_excel = aplicar_calculadora_no_df(
-        ler_adubacao_cobertura(cob_path), "fertilizante", "kg_total", "area_total_ha"
-    )
-    df_db = carregar_cobertura_todos(engine)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as e:
+        print("\n*** ERRO DE CONEXÃO COM SUPABASE ***", file=sys.stderr)
+        print(str(e), file=sys.stderr)
+        print(
+            "\nCorrija:\n"
+            "  1) Supabase → Settings → Database → Transaction pooler → URI\n"
+            "  2) Troque postgresql:// por postgresql+psycopg://\n"
+            "  3) Usuário: postgres.SEU_REF (não só postgres)\n"
+            "  4) Senha: Database password (não anon key)\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        df_excel = aplicar_calculadora_no_df(
+            ler_adubacao_cobertura(cob_path), "fertilizante", "kg_total", "area_total_ha"
+        )
+        df_db = carregar_cobertura_todos(engine)
+    except Exception as e:
+        print("\n*** ERRO AO LER SUPABASE ***", file=sys.stderr)
+        print(str(e), file=sys.stderr)
+        print(
+            "Rode no SQL Editor: sql/003_schema_adubacao_florestal.sql "
+            "(e opcional sql/004_controle_projeto_legado.sql).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     rel, df_gravar = conciliar_cobertura(df_excel, df_db, projeto_atual=args.projeto)
     print("\n=== Conciliação Cobertura (planilha × Supabase) ===")
